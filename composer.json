@@ -1,0 +1,17 @@
+{
+    "name": "diari/api_suscripcion",
+    "autoload": {
+        "psr-4": {
+            "Diari\\ApiSuscripcion\\": "src/"
+        }
+    },
+    "authors": [
+        {
+            "name": "ereyes0212",
+            "email": "erick.reyes@tiempo.hn"
+        }
+    ],
+    "require": {
+        "pixelpay/sdk": "^2.2"
+    }
+}
