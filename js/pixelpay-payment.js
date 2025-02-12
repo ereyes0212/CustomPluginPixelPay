@@ -186,9 +186,9 @@ async function procesarPago(username, password, email, membership_id, formData) 
 
         // Configuración del servicio
         const settings = new window.Models.Settings();
-        // settings.setupEndpoint("https://hn.ficoposonline.com");
-        // settings.setupCredentials("FH1828955021", "f480b93fb75f7f3f3cce20e60190e2f7");
-        settings.setupSandbox();
+        settings.setupEndpoint("https://hn.ficoposonline.com");
+        settings.setupCredentials("FH1828955021", "f480b93fb75f7f3f3cce20e60190e2f7");
+        // settings.setupSandbox();
 
 
         // Tarjeta
