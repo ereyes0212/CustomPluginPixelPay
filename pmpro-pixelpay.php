@@ -2,7 +2,7 @@
 /*
 Plugin Name: Paid Memberships Pro - PixelPay Gateway
 Description: Plugin para integrar pasarela de pago pixelpay a paidmembreship pro
-Version: 1.0.0
+Version: 1.0.2
 Author: Medios Publicitarios
 Text Domain: pmpro-pixelpay
 Domain Path: /languages
@@ -128,57 +128,53 @@ function crear_orden_pixelpay() {
     add_filter('pmpro_checkout_redirect_url', '__return_false', 20);
 
     // Verificar que se reciba el ID de la membresía
-    if (empty($_POST['membership_id'])) {
-        wp_send_json_error(['message' => 'Falta el ID de la membresía.']);
+    if ( empty( $_POST['membership_id'] ) ) {
+        wp_send_json_error( [ 'message' => 'Falta el ID de la membresía.' ] );
     }
-    $membership_id = intval($_POST['membership_id']);
+    $membership_id = intval( $_POST['membership_id'] );
 
-    // Si el usuario ya está logueado, usar el usuario actual; de lo contrario, requerir el username
+    // Si el usuario está logueado, usar el usuario actual; de lo contrario, crear la orden sin usuario.
     if ( is_user_logged_in() ) {
         $current_user = wp_get_current_user();
-        $user_id = $current_user->ID;
-        $username = $current_user->user_login;
+        $user_id      = $current_user->ID;
+        $username     = $current_user->user_login;
     } else {
-        if (empty($_POST['username'])) {
-            wp_send_json_error(['message' => 'Falta el username.']);
-        }
-        $username = sanitize_user($_POST['username']);
-        $user = get_user_by('login', $username);
-        if (!$user) {
-            wp_send_json_error(['message' => 'El usuario no existe.']);
-        }
-        $user_id = $user->ID;
+        // No se requiere crear un usuario en este flujo; asignar 0.
+        $user_id  = 0;
+        $username = '';
     }
 
     // Obtener el nivel de membresía
     $membership_level = new PMPro_Membership_Level();
-    $level = $membership_level->get_membership_level($membership_id);
-    if (!$level || empty($level->initial_payment)) {
-        wp_send_json_error(['message' => 'No se pudo obtener el precio de la membresía.']);
+    $level            = $membership_level->get_membership_level( $membership_id );
+    if ( ! $level || empty( $level->initial_payment ) ) {
+        wp_send_json_error( [ 'message' => 'No se pudo obtener el precio de la membresía.' ] );
     }
-    error_log("Detalles del nivel de membresía: " . print_r($level, true));
-    $monto = floatval($level->initial_payment);
+    error_log( "Detalles del nivel de membresía: " . print_r( $level, true ) );
+    $monto = floatval( $level->initial_payment );
 
     // Crear la orden en PMPro
-    $order = new MemberOrder();
-    $order->Gateway = "pixelpay";
-    $order->Gateway_environment = pmpro_getOption("gateway_environment");
-    $order->total = $monto;
-    $order->subtotal = $monto;
-    $order->membership_id = $membership_id;
-    $order->user_id = $user_id;
+    $order                         = new MemberOrder();
+    $order->Gateway                = "pixelpay";
+    $order->Gateway_environment    = pmpro_getOption( "gateway_environment" );
+    $order->total                  = $monto;
+    $order->subtotal               = $monto;
+    $order->membership_id          = $membership_id;
+    $order->user_id                = $user_id;
     $order->saveOrder();
 
-    if (!$order->id) {
-        wp_send_json_error(['message' => 'No se pudo generar la orden.']);
+    if ( ! $order->id ) {
+        wp_send_json_error( [ 'message' => 'No se pudo generar la orden.' ] );
     }
 
     // Procesar la orden con PMPro
-    $gateway = new PMProGateway("pixelpay");
-    $result = $gateway->process($order);
+    $gateway = new PMProGateway( "pixelpay" );
+    $result  = $gateway->process( $order );
 
-    // Asignar el nivel de membresía al usuario
-    pmpro_changeMembershipLevel($membership_id, $user_id);
+    // Solo asignar el nivel de membresía si hay un usuario (user_id > 0)
+    if ( $user_id > 0 ) {
+        pmpro_changeMembershipLevel( $membership_id, $user_id );
+    }
 
     // Actualizar los detalles del nivel en la tabla wp_pmpro_memberships_users
     global $wpdb;
@@ -195,24 +191,25 @@ function crear_orden_pixelpay() {
             'initial_payment' => $initial_payment,
             'billing_amount'  => $billing_amount,
         ),
-        array('user_id' => $user_id),
-        array('%s', '%s', '%s', '%s'),
-        array('%d')
+        array( 'user_id' => $user_id ),
+        array( '%s', '%s', '%s', '%s' ),
+        array( '%d' )
     );
 
-    if (!empty($order->error) || !$result) {
-        wp_send_json_error(['message' => !empty($order->error) ? $order->error : 'Error procesando la orden.']);
+    if ( ! empty( $order->error ) || ! $result ) {
+        wp_send_json_error( [ 'message' => ! empty( $order->error ) ? $order->error : 'Error procesando la orden.' ] );
     }
 
     // Devolver la respuesta con la orden generada y otros datos importantes
-    wp_send_json_success([
+    wp_send_json_success( [
         'order_id'      => $order->code,
         'monto'         => $order->total,
         'currency'      => $order->currency,
         'membership_id' => $membership_id,
         'user_id'       => $user_id,
-    ]);
+    ] );
 }
+
 
 
 
@@ -307,14 +304,16 @@ function crear_usuario() {
         ]);
     }
 
-    // Verificar si se reciben los datos requeridos
-    if ( empty($_POST['user_email']) || empty($_POST['username']) || empty($_POST['password']) ) {
+    // Verificar que se reciban los datos requeridos: email, username, password, order_id y membership_id
+    if ( empty($_POST['user_email']) || empty($_POST['username']) || empty($_POST['password']) || empty($_POST['order_id']) || empty($_POST['membership_id']) ) {
         wp_send_json_error(['message' => 'Faltan datos para crear el usuario.']);
     }
 
-    $user_email = sanitize_email($_POST['user_email']);
-    $username = sanitize_user($_POST['username']);
-    $password = sanitize_text_field($_POST['password']);
+    $user_email    = sanitize_email($_POST['user_email']);
+    $username      = sanitize_user($_POST['username']);
+    $password      = sanitize_text_field($_POST['password']);
+    $order_id      = sanitize_text_field($_POST['order_id']);
+    $membership_id = intval($_POST['membership_id']);
 
     // Verificar si el usuario ya existe por email o nombre de usuario
     if ( email_exists($user_email) || username_exists($username) ) {
@@ -324,7 +323,7 @@ function crear_usuario() {
     // Crear el usuario
     $user_id = wp_create_user($username, $password, $user_email);
     if ( is_wp_error($user_id) ) {
-        wp_send_json_error(['message' => 'Error al crear el usuario.']);
+        wp_send_json_error(['message' => 'Error al crear el usuario: ' . $user_id->get_error_message()]);
     }
 
     // Asignar el rol de suscriptor
@@ -335,11 +334,59 @@ function crear_usuario() {
     wp_set_current_user($user_id);
     wp_set_auth_cookie($user_id);
 
+    global $wpdb;
+
+    // Actualizar la tabla de órdenes (pmpro_membership_orders)
+    $orders_table = $wpdb->prefix . 'pmpro_membership_orders';
+    $updated_orders = $wpdb->update(
+        $orders_table,
+        array('user_id' => $user_id),
+        array('code' => $order_id),
+        array('%d'),
+        array('%s')
+    );
+
+    // Asignar el nivel de membresía al usuario
+    pmpro_changeMembershipLevel($membership_id, $user_id);
+
+    // Obtener el nivel de membresía para actualizar los detalles en la tabla pmpro_memberships_users
+    $membership_level = new PMPro_Membership_Level();
+    $level = $membership_level->get_membership_level($membership_id);
+
+    if ($level) {
+        $cycle_number    = $level->cycle_number;
+        $cycle_period    = $level->cycle_period;
+        $initial_payment = $level->initial_payment;
+        $billing_amount  = $level->billing_amount;
+
+        // Actualizar la tabla de membresías (pmpro_memberships_users)
+        $memberships_table = $wpdb->prefix . 'pmpro_memberships_users';
+        $updated_memberships = $wpdb->update(
+            $memberships_table,
+            array(
+                'cycle_number'    => $cycle_number,
+                'cycle_period'    => $cycle_period,
+                'initial_payment' => $initial_payment,
+                'billing_amount'  => $billing_amount,
+                'user_id'         => $user_id  // Forzamos el user_id asignado
+            ),
+            array(
+                'membership_id' => $membership_id,
+                'user_id'       => 0  // Actualizamos registros sin usuario asignado
+            ),
+            array('%s', '%s', '%s', '%s', '%d'),
+            array('%d', '%d')
+        );
+    }
+
     wp_send_json_success([
-        'message' => 'Usuario creado e iniciado sesión correctamente.',
-        'user_id' => $user_id,
+        'message'  => 'Usuario creado e iniciado sesión correctamente.',
+        'user_id'  => $user_id,
+        'order_id' => $order_id,
     ]);
 }
+
+
 
 
 

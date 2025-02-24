@@ -1,5 +1,6 @@
 <?php
 require_once __DIR__ . '/../vendor/autoload.php'; // Ajusta la ruta si es necesario
+require_once __DIR__ . '/../vendor/pixelpay/sdk/src/resources/Locations.php';
 
 use PixelPay\Sdk\Entities\TransactionResult;
 use PixelPay\Sdk\Requests\AuthTransaction;
@@ -74,37 +75,36 @@ class PMProGateway_Pixelpay extends PMProGateway
         add_action('wp_ajax_get_states', array('PMProGateway_Pixelpay', 'get_states_ajax_handler'));
         add_action('wp_ajax_nopriv_get_states', array('PMProGateway_Pixelpay', 'get_states_ajax_handler'));
         add_action('pmpro_after_checkout', array('PMProGateway_Pixelpay', 'custom_after_checkout_logic'), 10, 2);
-        add_action('pmpro_checkout_before_processing', array('PMProGateway_Pixelpay','custom_create_order_and_send_to_front'), 10, 1);
-
-        
+        add_action('pmpro_checkout_before_processing', array('PMProGateway_Pixelpay', 'custom_create_order_and_send_to_front'), 10, 1);
     }
     // Función que se ejecuta después del checkout
-    static function custom_after_checkout_logic($user_id, $morder) {
+    static function custom_after_checkout_logic($user_id, $morder)
+    {
         // Verificar si $morder es un objeto
         if (is_object($morder)) {
             // Imprimir el contenido de $morder para depuración
             error_log('Contenido de morder: ' . print_r($morder, true));
-    
+
             // Verificar si el campo subscription_transaction_id es null o vacío
             if (empty($morder->subscription_transaction_id)) {
                 // El usuario no tiene una suscripción activa, procederemos a actualizar la fecha de vencimiento
-    
+
                 // Verificar si el objeto tiene el método getMembershipLevel
                 if (method_exists($morder, 'getMembershipLevel')) {
                     // Obtener el nivel de membresía
                     $membership_level = $morder->getMembershipLevel();
-    
+
                     // Verificar si el nivel de membresía está disponible
                     if ($membership_level) {
                         // Obtener la duración del ciclo
                         $cycle_number = $membership_level->cycle_number;
                         $cycle_period = $membership_level->cycle_period;
-    
+
                         // Validar si tenemos un ciclo válido
                         if ($cycle_number > 0 && !empty($cycle_period)) {
                             // Calcular la fecha de vencimiento según el ciclo
                             $new_end_date = current_time('timestamp'); // Fecha actual
-    
+
                             // Dependiendo del período del ciclo, ajustar la fecha de vencimiento
                             switch (strtolower($cycle_period)) {
                                 case 'day':
@@ -123,10 +123,10 @@ class PMProGateway_Pixelpay extends PMProGateway
                                     error_log('Ciclo desconocido: ' . $cycle_period);
                                     return;
                             }
-    
+
                             // Formatear la nueva fecha de vencimiento
                             $new_end_date_formatted = date('Y-m-d H:i:s', $new_end_date);
-    
+
                             // Actualizar la fecha de vencimiento en la tabla pmpro_memberships_users
                             global $wpdb;
                             $wpdb->update(
@@ -136,7 +136,7 @@ class PMProGateway_Pixelpay extends PMProGateway
                                 array('%s'),  // Formato del dato (fecha)
                                 array('%d', '%d') // Formato de las condiciones (user_id y membership_id)
                             );
-    
+
                             // Opcional: loguear el cambio
                             error_log('Fecha de vencimiento actualizada a: ' . $new_end_date_formatted);
                         } else {
@@ -157,11 +157,11 @@ class PMProGateway_Pixelpay extends PMProGateway
             error_log('El parámetro $morder no es un objeto. Contenido: ' . print_r($morder, true));
         }
     }
-    
-    
-    
-    
-    
+
+
+
+
+
     // // Función para calcular la nueva fecha de finalización
     // static function calculate_new_end_date($membership_level) {
     //     // Lógica para calcular la nueva fecha de finalización según la recurrencia
@@ -327,17 +327,28 @@ class PMProGateway_Pixelpay extends PMProGateway
 
     static function my_pmpro_custom_billing_fields()
     {
+        // Mensaje de depuración visible en el checkout
 
-        $states = Locations::statesList('HN');
+        // Verificar si la clase está cargada
+
+
+        
+
+        
+        require_once __DIR__ . '/../vendor/autoload.php';
+        
+        // Cargar manualmente la clase Locations si no se ha cargado automáticamente
+        require_once __DIR__ . '/../vendor/pixelpay/sdk/src/resources/Locations.php'; // Carga manual de la clase Locations
+        
+
         $countries = Locations::countriesList();
-        // Verificar si hay errores de validación almacenados en la sesión
+        
 
-        // Verificar si hay un mensaje de error general
+        // Mostrar mensajes de error si existen
         if (isset($_SESSION['pmpro_error_message'])) {
             echo "<p class='pmpro_message pmpro_error'>{$_SESSION['pmpro_error_message']}</p>";
         }
 
-        // Verificar si hay errores de validación específicos
         if (isset($_SESSION['pmpro_validation_errors']) && !empty($_SESSION['pmpro_validation_errors'])) {
             echo "<ul class='pmpro_message pmpro_error'>";
             foreach ($_SESSION['pmpro_validation_errors'] as $error) {
@@ -346,7 +357,7 @@ class PMProGateway_Pixelpay extends PMProGateway
             echo "</ul>";
         }
 
-        // Limpiar los mensajes de la sesión después de mostrarlos
+        // Limpiar los mensajes de la sesión
         unset($_SESSION['pmpro_error_message']);
         unset($_SESSION['pmpro_validation_errors']);
 
@@ -359,19 +370,19 @@ class PMProGateway_Pixelpay extends PMProGateway
                 </legend>
 
                 <div class="pmpro_cols-2">
-                    <div class="pmpro_form_field ">
+                    <div class="pmpro_form_field">
                         <label for="bfirstname" class="pmpro_form_label">Nombre<span class="pmpro_asterisk"> <abbr title="Required Field">*</abbr></span></label>
                         <input id="bfirstname" name="bfirstname" type="text" class="pmpro_form_input pmpro_form_input-text pmpro_form_input-required" required />
                     </div>
 
-                    <div class="pmpro_form_field ">
+                    <div class="pmpro_form_field">
                         <label for="blastname" class="pmpro_form_label">Apellidos<span class="pmpro_asterisk"> <abbr title="Required Field">*</abbr></span></label>
                         <input id="blastname" name="blastname" type="text" class="pmpro_form_input pmpro_form_input-text pmpro_form_input-required" required />
                     </div>
                 </div>
 
                 <div class="pmpro_cols-2">
-                    <div class="pmpro_form_field ">
+                    <div class="pmpro_form_field">
                         <label for="baddress1" class="pmpro_form_label">Dirección 1<span class="pmpro_asterisk"> <abbr title="Required Field">*</abbr></span></label>
                         <input id="baddress1" name="baddress1" type="text" class="pmpro_form_input pmpro_form_input-text pmpro_form_input-required" required />
                     </div>
@@ -380,7 +391,7 @@ class PMProGateway_Pixelpay extends PMProGateway
                         <label for="bcountry" class="pmpro_form_label">País<span class="pmpro_asterisk"> <abbr title="Required Field">*</abbr></span></label>
                         <select id="bcountry" name="bcountry" class="pmpro_form_input pmpro_form_input-select" required>
                             <?php foreach ($countries as $code => $country): ?>
-                                <option value="<?php echo $code; ?>" <?php echo ($code === '') ? 'selected' : ''; ?>><?php echo $country; ?></option>
+                                <option value="<?php echo esc_attr($code); ?>"><?php echo esc_html($country); ?></option>
                             <?php endforeach; ?>
                         </select>
                     </div>
@@ -394,60 +405,51 @@ class PMProGateway_Pixelpay extends PMProGateway
                         </select>
                     </div>
 
-                    <div class="pmpro_form_field ">
-                        <label for="bzipcode" class="pmpro_form_label">Código Postal<span class="pmpro_asterisk"> </label>
+                    <div class="pmpro_form_field">
+                        <label for="bzipcode" class="pmpro_form_label">Código Postal</label>
                         <input id="bzipcode" name="bzipcode" type="text" class="pmpro_form_input pmpro_form_input-text pmpro_form_input-required" />
                     </div>
                 </div>
 
                 <div class="pmpro_cols-2">
-                    <div class="pmpro_form_field ">
+                    <div class="pmpro_form_field">
                         <label for="bphone" class="pmpro_form_label">Teléfono<span class="pmpro_asterisk"> <abbr title="Required Field">*</abbr></span></label>
                         <input id="bphone" name="bphone" type="text" class="pmpro_form_input pmpro_form_input-text pmpro_form_input-required" required />
                     </div>
 
-                    <div class="pmpro_form_field ">
+                    <div class="pmpro_form_field">
                         <label for="pemail" class="pmpro_form_label">Correo Electrónico<span class="pmpro_asterisk"> <abbr title="Required Field">*</abbr></span></label>
                         <input id="pemail" name="pemail" type="email" class="pmpro_form_input pmpro_form_input-email pmpro_form_input-required" required />
                     </div>
                 </div>
 
                 <div class="pmpro_cols-2">
-                    <div class="pmpro_form_field ">
+                    <div class="pmpro_form_field">
                         <label for="pconfirmemail" class="pmpro_form_label">Confirmar Correo Electrónico<span class="pmpro_asterisk"> <abbr title="Required Field">*</abbr></span></label>
                         <input id="pconfirmemail" name="pconfirmemail" type="email" class="pmpro_form_input pmpro_form_input-email pmpro_form_input-required" required />
                     </div>
                 </div>
 
-                <!-- Checkbox para pago recurrente -->
-                <div class="pmpro_form_field">
-                    <label for="recurring_payment" class="pmpro_form_label">
-                        <input id="recurring_payment" name="recurring_payment" type="checkbox" class="pmpro_form_input" />
-                        ¿Desea realizar un pago recurrente?
-                    </label>
-                </div>
 
             </div>
         </div>
+
         <script>
             document.getElementById('bcountry').addEventListener('change', function() {
                 var countryCode = this.value;
                 var citySelect = document.getElementById('bcity');
 
-                // Limpiar el select de ciudades
                 citySelect.innerHTML = '<option value="">Selecciona un departamento</option>';
 
                 if (countryCode) {
-                    // Realizar la solicitud AJAX para obtener los estados de este país
                     var xhr = new XMLHttpRequest();
                     xhr.open('GET', '<?php echo admin_url('admin-ajax.php'); ?>?action=get_states&countryCode=' + countryCode, true);
 
                     xhr.onload = function() {
                         if (xhr.status === 200) {
-                            var response = JSON.parse(xhr.responseText); // Parsear la respuesta JSON
+                            var response = JSON.parse(xhr.responseText);
                             if (response.success) {
-                                var states = response.data; // Obtener los estados de la respuesta
-                                // Añadir los estados al select de ciudades
+                                var states = response.data;
                                 Object.entries(states).forEach(function([stateCode, stateName]) {
                                     var option = document.createElement('option');
                                     option.value = stateCode;
@@ -468,6 +470,9 @@ class PMProGateway_Pixelpay extends PMProGateway
         </script>
     <?php
     }
+
+
+
 
 
     function mi_moneda_personalizada_pmpro($pmpro_currencies)
@@ -660,39 +665,40 @@ class PMProGateway_Pixelpay extends PMProGateway
     }
 
 
-    public function process(&$order) {
+    public function process(&$order)
+    {
         global $pmpro_currency;
-    
+
         // Asegurar que el usuario y la membresía están disponibles
         $user_id = $order->user_id;
         $membership_id = $order->membership_id;
-    
+
         if (empty($user_id) || empty($membership_id)) {
             $order->error = "Faltan datos del usuario o membresía.";
             return false;
         }
-    
+
         // Configurar los datos de la orden
         $order->payment_type = "PixelPay";
         $order->gateway = "pixelpay";
-        $order->status = "success"; 
+        $order->status = "success";
         $order->currency = $pmpro_currency;
-    
+
         // Guardar la orden en PMPro
         $order->saveOrder();
-    
+
         // Verificar si la orden se creó correctamente
         if (empty($order->id)) {
             $order->error = "No se pudo generar la orden en PMPro.";
             return false;
         }
-    
-    
+
+
         return true;
     }
-    
-    
-    
+
+
+
 
 
 
@@ -717,13 +723,14 @@ class PMProGateway_Pixelpay extends PMProGateway
     }
 
 
-    static function custom_create_order_and_send_to_front($order) {
+    static function custom_create_order_and_send_to_front($order)
+    {
         // Aquí generas la orden en PMPro, puedes crearla o actualizarla
         // Ejemplo con valores de ejemplo:
         $order_id = $order->get_id();
         $amount = $order->get_total();
         $currency = $order->get_currency();
-    
+
         // Retorna los datos al frontend (esto puede hacerse a través de AJAX, por ejemplo)
         wp_send_json_success([
             'order_id' => $order_id,
@@ -758,7 +765,7 @@ class PMProGateway_Pixelpay extends PMProGateway
         $settings = new Settings();
         $settings->setupEndpoint("https://hn.ficoposonline.com");
         $settings->setupCredentials("FH1828955021", "f480b93fb75f7f3f3cce20e60190e2f7");
-    
+
         // Crear objeto de tarjeta
         $card = new Card();
         $card->number = $card_number;
@@ -766,7 +773,7 @@ class PMProGateway_Pixelpay extends PMProGateway
         $card->expire_month = $month_expire;
         $card->expire_year = $year_expire;
         $card->cardholder = $card_holder;
-    
+
         // Crear objeto de facturación
         $billing = new Billing();
         $billing->address = $billing_address;
@@ -774,7 +781,7 @@ class PMProGateway_Pixelpay extends PMProGateway
         $billing->country = $billing_country;
         $billing->state = $billing_state;
         $billing->phone = $billing_phone;
-    
+
         // Crear objeto de orden
         $order = new Order();
         $order->id = $order_id;
@@ -782,33 +789,33 @@ class PMProGateway_Pixelpay extends PMProGateway
         $order->currency = $order_currency;
         $order->customer_name = $customer_name;
         $order->customer_email = $customer_email;
-    
+
         // Crear objeto de transacción de venta
         $sale = new SaleTransaction();
         $sale->setOrder($order);
         $sale->setCard($card);
         $sale->setBilling($billing);
-    
+
         // Crear objeto de autenticación para la transacción
         $authRequest = new AuthTransaction();
         $authRequest->withAuthenticationRequest("FH1828955021", "f480b93fb75f7f3f3cce20e60190e2f7");
-    
+
         // Realizar la transacción
         $transactionService = new Transaction($settings);
         $transactionService->doAuth($authRequest);
-    
+
         try {
             $response = $transactionService->doSale($sale);
-    
+
             if (TransactionResult::validateResponse($response)) {
                 $result = TransactionResult::fromResponse($response);
-    
+
                 $is_valid_payment = $transactionService->verifyPaymentHash(
                     $result->payment_hash,
                     $order_id,
                     "792848c0c64352d76ed5d08ebb0d6114f8afa22a29037ef3bb3f8edf8725bd5a0e2ad15ec59e0377548e762730e7434c7bd9e636a7e9527ba2b857d9e70d9faa" // La clave secreta para verificar el pago
                 );
-    
+
                 if ($is_valid_payment) {
                     // SUCCESS Valid Payment
                     return $result;
@@ -828,6 +835,4 @@ class PMProGateway_Pixelpay extends PMProGateway
             return false;
         }
     }
-    
-    
 }

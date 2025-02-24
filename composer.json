@@ -2,7 +2,8 @@
     "name": "diari/api_suscripcion",
     "autoload": {
         "psr-4": {
-            "Diari\\ApiSuscripcion\\": "src/"
+            "Diari\\ApiSuscripcion\\": "src/",
+            "PixelPay\\Sdk\\": "vendor/pixelpay/sdk/src/"
         }
     },
     "authors": [

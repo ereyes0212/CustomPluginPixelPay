@@ -49,6 +49,7 @@ class ComposerStaticInit21d3dc6d5779b7611cee77d64fa5afe1
         'PixelPay\\Sdk\\' => 
         array (
             0 => __DIR__ . '/..' . '/pixelpay/sdk/src',
+            1 => __DIR__ . '/..' . '/pixelpay/sdk/src',
         ),
         'GuzzleHttp\\Psr7\\' => 
         array (

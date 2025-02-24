@@ -1,6 +1,5 @@
 
 document.addEventListener("DOMContentLoaded", function () {
-    console.log(window);
     const checkoutForm = document.getElementById("pmpro_form");
     const submitButton = document.getElementById("pmpro_btn-submit");
     const membershipInput = document.getElementById("pmpro_level");
@@ -17,7 +16,6 @@ document.addEventListener("DOMContentLoaded", function () {
             const password = formData.get("password")?.trim();
             const password2 = formData.get("password2")?.trim();
             const email = formData.get("bemail")?.trim();
-            console.log("🚀 ~ email:", email);
             const confirmEmail = formData.get("bconfirmemail")?.trim();
 
 
@@ -74,25 +72,10 @@ document.addEventListener("DOMContentLoaded", function () {
                 return;
             }
 
-            try {
-                // Deshabilitar botón para evitar múltiples envíos
-                submitButton.disabled = true;
 
-                await procesarPago(username, password, email, membership_id, formData);
-
-
-            } catch (error) {
-                console.error("❌ Error en AJAX", error);
-                Swal.fire({
-                    title: 'Error de conexión',
-                    text: error.message || 'Error de conexión con el servidor.',
-                    icon: 'error',
-                    confirmButtonText: 'Aceptar'
-                });
-            } finally {
-                // Volver a habilitar el botón después del proceso
-                submitButton.disabled = false;
-            }
+            submitButton.disabled = true;
+            await procesarPago(username, password, email, membership_id, formData);
+            submitButton.disabled = false;
         });
     } else {
         console.error("❌ Elementos no encontrados en el DOM.");
@@ -102,38 +85,11 @@ document.addEventListener("DOMContentLoaded", function () {
 
 
 async function procesarPago(username, password, email, membership_id, formData) {
-    let userCreated = false;  // Indicador de si el usuario fue creado exitosamente
-    await obtenerNuevoNonce(); // Obtener el nuevo nonce antes de la siguiente petición
+    // Obtener el nuevo nonce antes de iniciar
+    await obtenerNuevoNonce();
+
     try {
-        // 1️⃣ **Crear Usuario**
-        const userResponse = await fetch(pixelpayData.ajax_url, {
-            method: "POST",
-            headers: { "Content-Type": "application/x-www-form-urlencoded" },
-            body: new URLSearchParams({
-                action: "crear_usuario",
-                nonce: pixelpayData.nonce,
-                username: username,
-                password: password,
-                user_email: email
-            }),
-        });
-
-        const userData = await userResponse.json();
-        if (!userData.success) {
-            Swal.fire({
-                title: "Error",
-                text: userData.data.message,
-                icon: "error",
-                confirmButtonText: "Aceptar"
-            });
-            return; // Si el usuario no se crea, terminar la función
-        }
-
-        userCreated = true;  // El usuario fue creado exitosamente
-        await obtenerNuevoNonce(); // Obtener el nuevo nonce antes de la siguiente petición
-        console.log("✅ Usuario creado o ya existente:", userData);
-
-        // 2️⃣ **Crear Orden**
+        // 1️⃣ **Crear Orden**
         const orderResponse = await fetch(pixelpayData.ajax_url, {
             method: "POST",
             headers: { "Content-Type": "application/x-www-form-urlencoded" },
@@ -146,6 +102,7 @@ async function procesarPago(username, password, email, membership_id, formData) 
         });
 
         const orderData = await orderResponse.json();
+        console.log("🚀 ~ procesarPago ~ orderData:", orderData)
         if (!orderData.success) {
             Swal.fire({
                 title: "Error al crear la orden",
@@ -155,16 +112,13 @@ async function procesarPago(username, password, email, membership_id, formData) 
             });
             return;
         }
-
-        console.log("✅ Orden creada:", orderData);
-
-        // Verificar que la orden tiene un ID válido antes de continuar
+        // Verificar que la orden tenga un ID válido
         if (!orderData.data?.order_id) {
             console.error("❌ Error: La orden no tiene un ID válido.");
             return;
         }
 
-        // 3️⃣ **Procesar Pago**
+        // 2️⃣ **Procesar Pago**
         const checkoutFormData = {
             customerName: `${formData.get("bfirstname")} ${formData.get("blastname")}`,
             customerEmail: formData.get("pemail"),
@@ -178,18 +132,14 @@ async function procesarPago(username, password, email, membership_id, formData) 
             expireMonth: formData.get("ExpirationMonth"),
             expireYear: formData.get("ExpirationYear"),
             zip: formData.get("bzipcode"),
-            recurrencia: formData.get("recurring_payment"),
             cardholderName: `${formData.get("bfirstname")} ${formData.get("blastname")}`,
         };
-        console.log("🚀 ~ procesarPago ~ checkoutFormData.recurrencia:", checkoutFormData.recurrencia)
-        console.log("checkoutFormData:", checkoutFormData);
 
         // Configuración del servicio
         const settings = new window.Models.Settings();
         settings.setupEndpoint("https://hn.ficoposonline.com");
         settings.setupCredentials("FH1828955021", "f480b93fb75f7f3f3cce20e60190e2f7");
         // settings.setupSandbox();
-
 
         // Tarjeta
         const card = new window.Models.Card();
@@ -231,29 +181,21 @@ async function procesarPago(username, password, email, membership_id, formData) 
             console.error("Error en la autenticación 3D Secure:", authResponse.message);
 
             let mensaje = authResponse.message || "Error desconocido en la autenticación";
-
-            // Verificar si existen errores y construir la lista de errores correctamente
             if (authResponse.errors && typeof authResponse.errors === "object" && Object.keys(authResponse.errors).length > 0) {
                 mensaje += "<ul>";
-
-                // Recorremos todos los campos de errores que puedan venir
                 Object.keys(authResponse.errors).forEach(campo => {
                     const erroresCampo = authResponse.errors[campo];
-
-                    // Si es un array de errores, los mostramos
                     if (Array.isArray(erroresCampo)) {
                         erroresCampo.forEach(error => {
-                            mensaje += `<li>${campo}: ${error}</li>`;  // Mostrar el campo junto al error
+                            mensaje += `<li>${campo}: ${error}</li>`;
                         });
                     } else {
-                        mensaje += `<li>${campo}: ${erroresCampo}</li>`;  // Para el caso de un único error no en un array
+                        mensaje += `<li>${campo}: ${erroresCampo}</li>`;
                     }
                 });
-
                 mensaje += "</ul>";
             }
 
-            // Mostrar el SweetAlert
             await Swal.fire({
                 title: "Error en la autenticación",
                 html: mensaje,
@@ -262,42 +204,48 @@ async function procesarPago(username, password, email, membership_id, formData) 
                 timerProgressBar: true
             });
 
-            // Borrar la orden en WordPress
+            // Borrar la orden en WordPress y obtener un nuevo nonce
             await borrarOrdenWordpress(orderData.data.order_id);
             await obtenerNuevoNonce();
-
-
-
-            return false;  // Regresar false para indicar que la transacción falló
+            return false;
         }
 
         const authResult = window.Entities.TransactionResult.fromResponse(authResponse);
-        console.log("✅ Autenticación 3D Secure exitosa:", authResult);
         if (authResult.response_approved) {
-            // 4️⃣ **Tokenización si es necesario**
-            if (checkoutFormData.recurrencia == 'on') {
-                console.log("Iniciando tokenización de tarjeta para recurrencia...");
-                await realizarTokenizacion(
-                    checkoutFormData.cardNumber,
-                    checkoutFormData.cardCVV,
-                    checkoutFormData.expireMonth,
-                    checkoutFormData.expireYear,
-                    checkoutFormData.cardholderName,
-                    checkoutFormData.address,
-                    checkoutFormData.country,
-                    checkoutFormData.state,
-                    checkoutFormData.city,
-                    checkoutFormData.zip,
-                    checkoutFormData.phone,
-                    orderData.data.order_id
-                );
-            } else {
-                await actualizarFechaFinMembresia(orderData.data.order_id);
+
+            const userResponse = await fetch(pixelpayData.ajax_url, {
+                method: "POST",
+                headers: { "Content-Type": "application/x-www-form-urlencoded" },
+                body: new URLSearchParams({
+                    action: "crear_usuario",
+                    nonce: pixelpayData.nonce,
+                    username: username,
+                    password: password,
+                    user_email: email,
+                    order_id: orderData.data.order_id,
+                    membership_id:membership_id
+                }),
+            });
+
+            const userData = await userResponse.json();
+            if (!userData.success) {
+                Swal.fire({
+                    title: "Error",
+                    text: userData.data.message,
+                    icon: "error",
+                    confirmButtonText: "Aceptar"
+                });
+                return;
             }
+            // Actualizar la fecha de fin de membresía
+            await actualizarFechaFinMembresia(orderData.data.order_id);
 
-            // 5️⃣ **Redirigir al usuario a su factura**
-            window.location.href = `index.php/cuenta-de-membresia/pedidos-de-membresia/?invoice=${orderData.data.order_id}`;
+            // 3️⃣ **Crear Usuario**
+            await obtenerNuevoNonce();
 
+
+            // 4️⃣ **Redirigir al usuario a su factura**
+            window.location.href = `${window.location.origin}/cuenta-de-membresia/pedidos-de-membresia/?invoice=${orderData.data.order_id}`;
         }
         else {
             Swal.fire({
@@ -311,13 +259,13 @@ async function procesarPago(username, password, email, membership_id, formData) 
             await obtenerNuevoNonce();
         }
 
-
         return authResult;
     } catch (error) {
         console.error("❌ Error inesperado al procesar el pago:", error);
         return false;
     }
 }
+
 
 
 
@@ -356,8 +304,6 @@ async function realizarTokenizacion(cardNumber, cardCVV, expireMonth, expireYear
         const data = await response.json();
 
         if (data.success) {
-            console.log('Tokenización exitosa:', data);
-            console.log(data.data.token)
             // Llamar a la función para actualizar el token de la transacción
             await actualizarTokenTransaccion(orderId, data.data.token);
         } else {
@@ -396,7 +342,6 @@ function borrarOrdenWordpress(orderId) {
         success: function (response) {
             if (response.success) {
                 // Si la orden se elimina correctamente
-                console.log(response.data.message); // Mensaje de éxito recibido del servidor
                 // Aquí puedes redirigir al usuario o mostrar un mensaje de confirmación
             } else {
                 // Si ocurre un error al eliminar la orden
@@ -435,7 +380,6 @@ async function obtenerNuevoNonce() {
     const data = await response.json();
     if (data.success) {
         pixelpayData.nonce = data.data.nonce; // Actualiza el nonce en el cliente
-        console.log("Nuevo nonce obtenido:", pixelpayData.nonce);
     } else {
         console.error("Error al obtener el nuevo nonce");
     }
@@ -459,7 +403,6 @@ async function actualizarTokenTransaccion(orderId, token) {
 
         const result = await response.json();
         if (result.success) {
-            console.log('Token de transacción actualizado correctamente.');
         } else {
             console.error('Error al actualizar el token de transacción:', result.data);
         }
