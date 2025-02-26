@@ -2,7 +2,7 @@
 /*
 Plugin Name: Paid Memberships Pro - PixelPay Gateway
 Description: Plugin para integrar pasarela de pago pixelpay a paidmembreship pro
-Version: 1.0.2
+Version: 1.0.5
 Author: Medios Publicitarios
 Text Domain: pmpro-pixelpay
 Domain Path: /languages
@@ -133,15 +133,12 @@ function crear_orden_pixelpay() {
     }
     $membership_id = intval( $_POST['membership_id'] );
 
-    // Si el usuario está logueado, usar el usuario actual; de lo contrario, crear la orden sin usuario.
+    // Si el usuario está logueado, usar el usuario actual; de lo contrario, crear la orden sin usuario (user_id = 0)
     if ( is_user_logged_in() ) {
         $current_user = wp_get_current_user();
         $user_id      = $current_user->ID;
-        $username     = $current_user->user_login;
     } else {
-        // No se requiere crear un usuario en este flujo; asignar 0.
-        $user_id  = 0;
-        $username = '';
+        $user_id = 0;
     }
 
     // Obtener el nivel de membresía
@@ -153,14 +150,14 @@ function crear_orden_pixelpay() {
     error_log( "Detalles del nivel de membresía: " . print_r( $level, true ) );
     $monto = floatval( $level->initial_payment );
 
-    // Crear la orden en PMPro
-    $order                         = new MemberOrder();
-    $order->Gateway                = "pixelpay";
-    $order->Gateway_environment    = pmpro_getOption( "gateway_environment" );
-    $order->total                  = $monto;
-    $order->subtotal               = $monto;
-    $order->membership_id          = $membership_id;
-    $order->user_id                = $user_id;
+    // Crear la orden en PMPro, asignando el user_id obtenido (si el usuario está logueado, se asigna su ID)
+    $order                      = new MemberOrder();
+    $order->Gateway             = "pixelpay";
+    $order->Gateway_environment = pmpro_getOption( "gateway_environment" );
+    $order->total               = $monto;
+    $order->subtotal            = $monto;
+    $order->membership_id       = $membership_id;
+    $order->user_id             = $user_id;
     $order->saveOrder();
 
     if ( ! $order->id ) {
@@ -171,12 +168,12 @@ function crear_orden_pixelpay() {
     $gateway = new PMProGateway( "pixelpay" );
     $result  = $gateway->process( $order );
 
-    // Solo asignar el nivel de membresía si hay un usuario (user_id > 0)
+    // Si el usuario está logueado, asignar el nivel de membresía al usuario
     if ( $user_id > 0 ) {
         pmpro_changeMembershipLevel( $membership_id, $user_id );
     }
 
-    // Actualizar los detalles del nivel en la tabla wp_pmpro_memberships_users
+    // Actualizar los detalles del nivel en la tabla pmpro_memberships_users
     global $wpdb;
     $cycle_number    = $level->cycle_number;
     $cycle_period    = $level->cycle_period;
@@ -215,13 +212,18 @@ function crear_orden_pixelpay() {
 
 
 
+
 function cargar_pixelpay_js() {
-    if (pmpro_is_checkout()) { // Solo en la página de checkout de PMPro
+    if ( pmpro_is_checkout() ) { // Solo en la página de checkout de PMPro
+        $script_path = plugin_dir_path( __FILE__ ) . 'js/pixelpay-payment.js';
+        $script_url  = plugins_url( 'js/pixelpay-payment.js', __FILE__ );
+        $version     = filemtime( $script_path ); // Usa la fecha de modificación como versión
+
         wp_enqueue_script(
             'pixelpay-payment', 
-            plugins_url('js/pixelpay-payment.js', __FILE__), 
+            $script_url, 
             array('jquery'), 
-            null, 
+            $version, 
             true
         );
 
@@ -239,6 +241,7 @@ add_action('wp_enqueue_scripts', 'cargar_pixelpay_js');
 
 
 
+
 //////////////////////////////////////////////////////////////////
 // Función para borrar la orden y el usuario si la transacción falla
 // Función para borrar la orden y el usuario si la transacción falla
@@ -248,43 +251,73 @@ add_action('wp_ajax_nopriv_borrar_orden_pixelpay', 'borrar_orden_pixelpay');
 function borrar_orden_pixelpay() {
     check_ajax_referer('pmpro_checkout_nonce', 'nonce');
 
-    // Verificar si se recibe el ID de la orden
-    if (empty($_POST['order_id'])) {
+    // Sanitizamos los datos recibidos
+    $hash = sanitize_text_field($_POST['hash']);
+
+    if ( empty($_POST['order_id']) ) {
         wp_send_json_error(['message' => 'No se recibió el ID de la orden.']);
     }
 
     $order_id = sanitize_text_field($_POST['order_id']);
+    $hash     = sanitize_text_field($_POST['hash']);
 
     // Buscar la orden en PMPro
     $order = new MemberOrder($order_id);
 
-    if (!$order->id) {
+    if ( !$order->id ) {
         wp_send_json_error(['message' => 'No se encontró la orden.']);
     }
 
-    // Obtener el ID del usuario asociado a la orden
-    $user_id = $order->user_id;
+    // Obtenemos el ID del usuario y el ID de la nueva membresía (la que se intentó contratar y falló)
+    $user_id           = $order->user_id;
+    $new_membership_id = $order->membership_id;
 
-    // Borrar la orden
+    // Borrar la orden en PMPro
     $order->deleteMe();
 
-    // Verificar si el usuario está logueado antes de intentar eliminarlo
-    if (!$user_id || !is_user_logged_in()) {
-        // Si el usuario no está logueado, eliminarlo
-        if ($user_id) {
-            require_once ABSPATH . 'wp-admin/includes/user.php'; // Incluir funciones de administración de usuarios
-            $deleted = wp_delete_user($user_id);
+    // Manejo de los registros en la tabla wp_pmpro_memberships_users
+    global $wpdb;
+    $tabla = $wpdb->prefix . 'pmpro_memberships_users';
 
-            if (!$deleted) {
+    // 1. Eliminar el registro de la nueva membresía (la contratación fallida)
+    $wpdb->delete(
+        $tabla,
+        array(
+            'user_id'       => $user_id,
+            'membership_id' => $new_membership_id,
+        ),
+        array('%d', '%d')
+    );
+
+    // 2. Reactivar la membresía anterior: buscar el registro del usuario con status "changed"
+    //    (se asume que es la única o la más reciente que se dejó en ese estado)
+    $wpdb->update(
+        $tabla,
+        array('status' => 'active'),
+        array(
+            'user_id' => $user_id,
+            'status'  => 'changed'
+        ),
+        array('%s'),
+        array('%d', '%s')
+    );
+
+    // Si el usuario no está logueado, se puede proceder a eliminarlo (según la lógica actual)
+    if ( !$user_id || !is_user_logged_in() ) {
+        if ( $user_id ) {
+            require_once ABSPATH . 'wp-admin/includes/user.php';
+            $deleted = wp_delete_user($user_id);
+            if ( !$deleted ) {
                 wp_send_json_error(['message' => 'No se pudo eliminar el usuario.']);
             }
         }
     }
 
     wp_send_json_success([
-        'message' => 'Orden eliminada. Usuario eliminado solo si no tenía sesión activa.',
+        'message' => 'Orden eliminada, se borró el registro de la nueva membresía fallida y se reactivó la membresía anterior.',
     ]);
 }
+
 
 
 
@@ -314,6 +347,7 @@ function crear_usuario() {
     $password      = sanitize_text_field($_POST['password']);
     $order_id      = sanitize_text_field($_POST['order_id']);
     $membership_id = intval($_POST['membership_id']);
+    $hash = intval($_POST['hash']);
 
     // Verificar si el usuario ya existe por email o nombre de usuario
     if ( email_exists($user_email) || username_exists($username) ) {

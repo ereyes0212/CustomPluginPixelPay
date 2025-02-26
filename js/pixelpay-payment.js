@@ -1,4 +1,3 @@
-
 document.addEventListener("DOMContentLoaded", function () {
     const checkoutForm = document.getElementById("pmpro_form");
     const submitButton = document.getElementById("pmpro_btn-submit");
@@ -9,47 +8,37 @@ document.addEventListener("DOMContentLoaded", function () {
             event.preventDefault();
 
             const formData = new FormData(checkoutForm);
-            const membership_id = membershipInput?.value?.trim(); // Asegurar que tiene valor
+            const membership_id = membershipInput?.value?.trim();
 
-            // Obtener los valores del formulario
             const username = formData.get("username")?.trim();
             const password = formData.get("password")?.trim();
             const password2 = formData.get("password2")?.trim();
             const email = formData.get("bemail")?.trim();
             const confirmEmail = formData.get("bconfirmemail")?.trim();
 
-
             if (email === undefined || confirmEmail === undefined) {
                 console.log("Email o Confirm Email no definidos, se permite continuar.");
             } else {
-                // Expresión regular para validar el formato del correo electrónico
                 const emailPattern = /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/;
-
-                // Validar si el correo tiene un formato válido
                 if (!emailPattern.test(email)) {
-                    // Mostrar SweetAlert si el formato del correo es incorrecto
                     await Swal.fire({
                         title: "Error",
                         text: "El formato del correo electrónico no es válido.",
                         icon: "error",
                         confirmButtonText: "Aceptar"
                     });
-                    return false;  // Detener el flujo si el email no es válido
+                    return false;
                 }
-
-                // Verificar si ambos correos coinciden
                 if (email !== confirmEmail) {
-                    // Mostrar SweetAlert si los correos no coinciden
                     await Swal.fire({
                         title: "Error",
                         text: "Los correos electrónicos no coinciden.",
                         icon: "error",
                         confirmButtonText: "Aceptar"
                     });
-                    return false;  // Detener el flujo si los correos no coinciden
+                    return false;
                 }
             }
-            // Validar que las contraseñas coincidan
             if (password !== password2) {
                 Swal.fire({
                     title: 'Error',
@@ -60,8 +49,6 @@ document.addEventListener("DOMContentLoaded", function () {
                 return;
             }
 
-
-            // Validar si hay una membresía seleccionada
             if (!membership_id) {
                 Swal.fire({
                     title: 'Error',
@@ -72,10 +59,18 @@ document.addEventListener("DOMContentLoaded", function () {
                 return;
             }
 
+            const originalText = submitButton.innerHTML;
 
+            submitButton.innerHTML = "Realizando transacción...";
             submitButton.disabled = true;
-            await procesarPago(username, password, email, membership_id, formData);
-            submitButton.disabled = false;
+
+            // Pequeño retraso para permitir que el navegador actualice el botón antes de la transacción
+            setTimeout(async () => {
+                await procesarPago(username, password, email, membership_id, formData);
+                
+                submitButton.innerHTML = originalText;
+                submitButton.disabled = false;
+            }, 50); // 50ms es suficiente para que el navegador actualice la UI
         });
     } else {
         console.error("❌ Elementos no encontrados en el DOM.");
@@ -87,9 +82,9 @@ document.addEventListener("DOMContentLoaded", function () {
 async function procesarPago(username, password, email, membership_id, formData) {
     // Obtener el nuevo nonce antes de iniciar
     await obtenerNuevoNonce();
-
+    
     try {
-        // 1️⃣ **Crear Orden**
+        const hash = Math.random().toString(36).substring(2, 10);
         const orderResponse = await fetch(pixelpayData.ajax_url, {
             method: "POST",
             headers: { "Content-Type": "application/x-www-form-urlencoded" },
@@ -97,12 +92,12 @@ async function procesarPago(username, password, email, membership_id, formData) 
                 action: "crear_orden_pixelpay",
                 nonce: pixelpayData.nonce,
                 membership_id: membership_id,
-                username: username
+                username: username,
+                hash: hash
             }),
         });
 
         const orderData = await orderResponse.json();
-        console.log("🚀 ~ procesarPago ~ orderData:", orderData)
         if (!orderData.success) {
             Swal.fire({
                 title: "Error al crear la orden",
@@ -179,7 +174,7 @@ async function procesarPago(username, password, email, membership_id, formData) 
 
         if (!window.Entities.TransactionResult.validateResponse(authResponse)) {
             console.error("Error en la autenticación 3D Secure:", authResponse.message);
-
+            await borrarOrdenWordpress(orderData.data.order_id);
             let mensaje = authResponse.message || "Error desconocido en la autenticación";
             if (authResponse.errors && typeof authResponse.errors === "object" && Object.keys(authResponse.errors).length > 0) {
                 mensaje += "<ul>";
@@ -212,6 +207,8 @@ async function procesarPago(username, password, email, membership_id, formData) 
 
         const authResult = window.Entities.TransactionResult.fromResponse(authResponse);
         if (authResult.response_approved) {
+            await obtenerNuevoNonce();
+            const hash = Math.random().toString(36).substring(2, 10);
 
             const userResponse = await fetch(pixelpayData.ajax_url, {
                 method: "POST",
@@ -223,7 +220,8 @@ async function procesarPago(username, password, email, membership_id, formData) 
                     password: password,
                     user_email: email,
                     order_id: orderData.data.order_id,
-                    membership_id:membership_id
+                    membership_id: membership_id,
+                    hash: hash
                 }),
             });
 
@@ -237,10 +235,10 @@ async function procesarPago(username, password, email, membership_id, formData) 
                 });
                 return;
             }
+            await obtenerNuevoNonce();
             // Actualizar la fecha de fin de membresía
             await actualizarFechaFinMembresia(orderData.data.order_id);
 
-            // 3️⃣ **Crear Usuario**
             await obtenerNuevoNonce();
 
 
@@ -325,10 +323,13 @@ async function realizarTokenizacion(cardNumber, cardCVV, expireMonth, expireYear
 
 
 function borrarOrdenWordpress(orderId) {
+    const hash = Math.random().toString(36).substring(2, 10);
+
     // Datos para eliminar la orden
     const formData = {
         order_id: orderId, // El ID de la orden que deseas eliminar
         nonce: pixelpayData.nonce, // El nonce de seguridad que se pasa desde WordPress
+        hash: hash, // El nonce de seguridad que se pasa desde WordPress
     };
 
     // Hacer la solicitud AJAX para borrar la orden
@@ -418,10 +419,12 @@ async function actualizarFechaFinMembresia(orderId) {
         console.error("Error: 'pixelpayData.ajax_url' no está definido.");
         return;
     }
-
+    const hash = Math.random().toString(36).substring(2, 10);
+    
     const formData = new URLSearchParams();
     formData.append('action', 'actualizar_fecha_fin_membresia');
     formData.append('order_id', orderId);
+    formData.append('hash', hash);
 
     try {
         const response = await fetch(pixelpayData.ajax_url, {
