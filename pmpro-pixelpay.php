@@ -319,16 +319,13 @@ function borrar_orden_pixelpay() {
 }
 
 
-
-
-
+// Función para crear el usuario
 add_action('wp_ajax_crear_usuario', 'crear_usuario');
 add_action('wp_ajax_nopriv_crear_usuario', 'crear_usuario');
 
 function crear_usuario() {
     check_ajax_referer('pmpro_checkout_nonce', 'nonce');
 
-    // Si ya hay un usuario logueado, retorna sus datos
     if ( is_user_logged_in() ) {
         $current_user = wp_get_current_user();
         wp_send_json_success([
@@ -337,88 +334,134 @@ function crear_usuario() {
         ]);
     }
 
-    // Verificar que se reciban los datos requeridos: email, username, password, order_id y membership_id
-    if ( empty($_POST['user_email']) || empty($_POST['username']) || empty($_POST['password']) || empty($_POST['order_id']) || empty($_POST['membership_id']) ) {
+    if ( empty($_POST['user_email']) || empty($_POST['username']) || empty($_POST['password']) ) {
         wp_send_json_error(['message' => 'Faltan datos para crear el usuario.']);
     }
 
-    $user_email    = sanitize_email($_POST['user_email']);
-    $username      = sanitize_user($_POST['username']);
-    $password      = sanitize_text_field($_POST['password']);
-    $order_id      = sanitize_text_field($_POST['order_id']);
-    $membership_id = intval($_POST['membership_id']);
-    $hash = intval($_POST['hash']);
+    $user_email = sanitize_email($_POST['user_email']);
+    $username   = sanitize_user($_POST['username']);
+    $password   = sanitize_text_field($_POST['password']);
 
-    // Verificar si el usuario ya existe por email o nombre de usuario
     if ( email_exists($user_email) || username_exists($username) ) {
         wp_send_json_error(['message' => 'El usuario ya existe.']);
     }
 
-    // Crear el usuario
     $user_id = wp_create_user($username, $password, $user_email);
     if ( is_wp_error($user_id) ) {
         wp_send_json_error(['message' => 'Error al crear el usuario: ' . $user_id->get_error_message()]);
     }
 
-    // Asignar el rol de suscriptor
     $user = get_user_by('id', $user_id);
     $user->set_role('subscriber');
 
-    // Iniciar sesión automáticamente después de la creación
     wp_set_current_user($user_id);
     wp_set_auth_cookie($user_id);
 
-    global $wpdb;
-
-    // Actualizar la tabla de órdenes (pmpro_membership_orders)
-    $orders_table = $wpdb->prefix . 'pmpro_membership_orders';
-    $updated_orders = $wpdb->update(
-        $orders_table,
-        array('user_id' => $user_id),
-        array('code' => $order_id),
-        array('%d'),
-        array('%s')
-    );
-
-    // Asignar el nivel de membresía al usuario
-    pmpro_changeMembershipLevel($membership_id, $user_id);
-
-    // Obtener el nivel de membresía para actualizar los detalles en la tabla pmpro_memberships_users
-    $membership_level = new PMPro_Membership_Level();
-    $level = $membership_level->get_membership_level($membership_id);
-
-    if ($level) {
-        $cycle_number    = $level->cycle_number;
-        $cycle_period    = $level->cycle_period;
-        $initial_payment = $level->initial_payment;
-        $billing_amount  = $level->billing_amount;
-
-        // Actualizar la tabla de membresías (pmpro_memberships_users)
-        $memberships_table = $wpdb->prefix . 'pmpro_memberships_users';
-        $updated_memberships = $wpdb->update(
-            $memberships_table,
-            array(
-                'cycle_number'    => $cycle_number,
-                'cycle_period'    => $cycle_period,
-                'initial_payment' => $initial_payment,
-                'billing_amount'  => $billing_amount,
-                'user_id'         => $user_id  // Forzamos el user_id asignado
-            ),
-            array(
-                'membership_id' => $membership_id,
-                'user_id'       => 0  // Actualizamos registros sin usuario asignado
-            ),
-            array('%s', '%s', '%s', '%s', '%d'),
-            array('%d', '%d')
-        );
-    }
-
     wp_send_json_success([
-        'message'  => 'Usuario creado e iniciado sesión correctamente.',
+        'message'  => 'Usuario creado correctamente.',
         'user_id'  => $user_id,
-        'order_id' => $order_id,
     ]);
 }
+
+add_action('wp_ajax_asociar_orden', 'asociar_orden');
+add_action('wp_ajax_nopriv_asociar_orden', 'asociar_orden');
+
+function asociar_orden() {
+    try {
+        check_ajax_referer('pmpro_checkout_nonce', 'nonce');
+
+        if ( empty($_POST['user_id']) || empty($_POST['order_id']) ) {
+            wp_send_json_error(['message' => 'Faltan datos para asociar la orden.']);
+        }
+
+        $user_id = intval($_POST['user_id']);
+        $order_code = sanitize_text_field($_POST['order_id']); // asumimos que el valor es el código de la orden
+
+        // Utilizamos la clase MemberOrder de PMPro para cargar la orden por código.
+        $order = new MemberOrder();
+        $order->getMemberOrderByCode($order_code);
+        if ( empty($order->id) ) {
+            throw new Exception("Orden no encontrada para el código: " . $order_code);
+        }
+
+        // Actualizamos el user_id en el objeto de la orden.
+        $order->user_id = $user_id;
+
+        // Guardamos la orden. La función saveOrder() se encarga de actualizar la base de datos.
+        $saved = $order->saveOrder();
+        if ( ! $saved ) {
+            throw new Exception("No se pudo guardar la orden actualizada.");
+        }
+
+        wp_send_json_success([
+            'message'   => 'Orden actualizada correctamente.',
+            'user_id'   => $user_id,
+            'order_code' => $order_code,
+        ]);
+    } catch (Exception $e) {
+        error_log("Error en asociar_orden: " . $e->getMessage());
+        wp_send_json_error(['message' => 'Error: ' . $e->getMessage()]);
+    }
+}
+
+
+add_action('wp_ajax_asignar_membresia_detalles', 'asignar_membresia_detalles');
+add_action('wp_ajax_nopriv_asignar_membresia_detalles', 'asignar_membresia_detalles');
+
+function asignar_membresia_detalles() {
+    try {
+        check_ajax_referer('pmpro_checkout_nonce', 'nonce');
+
+        if ( empty($_POST['user_id']) || empty($_POST['membership_id']) ) {
+            wp_send_json_error(['message' => 'Faltan datos para asignar la membresía.']);
+        }
+
+        $user_id       = intval($_POST['user_id']);
+        $membership_id = intval($_POST['membership_id']);
+
+        // Asignar la membresía utilizando la función de PMPro
+        pmpro_changeMembershipLevel($membership_id, $user_id);
+
+        // Obtener los detalles del nivel de membresía
+        $membership_level = new PMPro_Membership_Level();
+        $level = $membership_level->get_membership_level($membership_id);
+
+        if ($level) {
+            global $wpdb;
+            $result = $wpdb->update(
+                $wpdb->prefix . 'pmpro_memberships_users',
+                array(
+                    'cycle_number'    => $level->cycle_number,
+                    'cycle_period'    => $level->cycle_period,
+                    'initial_payment' => $level->initial_payment,
+                    'billing_amount'  => $level->billing_amount,
+                    'user_id'         => $user_id
+                ),
+                array(
+                    'membership_id' => $membership_id,
+                    'user_id'       => 0
+                ),
+                array('%s', '%s', '%s', '%s', '%d'),
+                array('%d', '%d')
+            );
+            if ($result === false) {
+                throw new Exception("Error al actualizar los datos de membresía: " . $wpdb->last_error);
+            }
+        }
+
+        wp_send_json_success([
+            'message'     => 'Membresía asignada correctamente.',
+            'user_id'     => $user_id,
+            'membership_id' => $membership_id,
+        ]);
+    } catch (Exception $e) {
+        error_log("Error en asignar_membresia_detalles: " . $e->getMessage());
+        wp_send_json_error(['message' => 'Error: ' . $e->getMessage()]);
+    }
+}
+
+
+
 
 
 

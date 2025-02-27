@@ -67,7 +67,7 @@ document.addEventListener("DOMContentLoaded", function () {
             // Pequeño retraso para permitir que el navegador actualice el botón antes de la transacción
             setTimeout(async () => {
                 await procesarPago(username, password, email, membership_id, formData);
-                
+
                 submitButton.innerHTML = originalText;
                 submitButton.disabled = false;
             }, 50); // 50ms es suficiente para que el navegador actualice la UI
@@ -82,7 +82,7 @@ document.addEventListener("DOMContentLoaded", function () {
 async function procesarPago(username, password, email, membership_id, formData) {
     // Obtener el nuevo nonce antes de iniciar
     await obtenerNuevoNonce();
-    
+
     try {
         const hash = Math.random().toString(36).substring(2, 10);
         const orderResponse = await fetch(pixelpayData.ajax_url, {
@@ -210,6 +210,8 @@ async function procesarPago(username, password, email, membership_id, formData) 
             await obtenerNuevoNonce();
             const hash = Math.random().toString(36).substring(2, 10);
 
+            // Llamada AJAX para crear el usuario
+            console.log("ENtró a crear_usuario")
             const userResponse = await fetch(pixelpayData.ajax_url, {
                 method: "POST",
                 headers: { "Content-Type": "application/x-www-form-urlencoded" },
@@ -218,12 +220,11 @@ async function procesarPago(username, password, email, membership_id, formData) 
                     nonce: pixelpayData.nonce,
                     username: username,
                     password: password,
-                    user_email: email,
-                    order_id: orderData.data.order_id,
-                    membership_id: membership_id,
-                    hash: hash
+                    user_email: email
+                    // No es necesario enviar order_id ni membership_id aquí
                 }),
             });
+
 
             const userData = await userResponse.json();
             if (!userData.success) {
@@ -235,12 +236,62 @@ async function procesarPago(username, password, email, membership_id, formData) 
                 });
                 return;
             }
+            // Llamada AJAX para asignar la membresía al usuario creado
+            await obtenerNuevoNonce();
+            // 1️⃣ Llamada AJAX para asociar la orden con el usuario
+            console.log("ENtró a generar asociar_orden")
+            const asociarResponse = await fetch(pixelpayData.ajax_url, {
+                method: "POST",
+                headers: { "Content-Type": "application/x-www-form-urlencoded" },
+                body: new URLSearchParams({
+                    action: "asociar_orden",
+                    nonce: pixelpayData.nonce,
+                    user_id: userData.data.user_id,
+                    order_id: orderData.data.order_id
+                }),
+            });
+            const asociarData = await asociarResponse.json();
+            if (!asociarData.success) {
+                Swal.fire({
+                    title: "Error",
+                    text: asociarData.data.message,
+                    icon: "error",
+                    confirmButtonText: "Aceptar"
+                });
+                return;
+            }
+
+            // 2️⃣ Llamada AJAX para asignar la membresía y actualizar los detalles
+            await obtenerNuevoNonce();
+            console.log("ENtró a asignar_membresia_detalles")
+            const asignarResponse = await fetch(pixelpayData.ajax_url, {
+                method: "POST",
+                headers: { "Content-Type": "application/x-www-form-urlencoded" },
+                body: new URLSearchParams({
+                    action: "asignar_membresia_detalles",
+                    nonce: pixelpayData.nonce,
+                    user_id: userData.data.user_id,
+                    membership_id: membership_id
+                }),
+            });
+            const asignarData = await asignarResponse.json();
+            if (!asignarData.success) {
+                Swal.fire({
+                    title: "Error",
+                    text: asignarData.data.message,
+                    icon: "error",
+                    confirmButtonText: "Aceptar"
+                });
+                return;
+            }
+
+
+
             await obtenerNuevoNonce();
             // Actualizar la fecha de fin de membresía
             await actualizarFechaFinMembresia(orderData.data.order_id);
 
             await obtenerNuevoNonce();
-
 
             // 4️⃣ **Redirigir al usuario a su factura**
             window.location.href = `${window.location.origin}/cuenta-de-membresia/pedidos-de-membresia/?invoice=${orderData.data.order_id}`;
@@ -420,7 +471,7 @@ async function actualizarFechaFinMembresia(orderId) {
         return;
     }
     const hash = Math.random().toString(36).substring(2, 10);
-    
+
     const formData = new URLSearchParams();
     formData.append('action', 'actualizar_fecha_fin_membresia');
     formData.append('order_id', orderId);
