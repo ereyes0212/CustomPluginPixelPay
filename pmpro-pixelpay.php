@@ -8,33 +8,32 @@ Text Domain: pmpro-pixelpay
 Domain Path: /languages
 */
 
-define( "PMPRO_PIXELPAY_DIR", dirname( __FILE__ ) );
+define("PMPRO_PIXELPAY_DIR", dirname(__FILE__));
 
 /**
  * Load the PixelPay Gateway if PMPro is active.
  */
-function pmpro_pixelpay_load_gateway() {
+function pmpro_pixelpay_load_gateway()
+{
     try {
 
-        if ( class_exists( 'PMProGateway' ) ) {
-            require_once( PMPRO_PIXELPAY_DIR . '/classes/class.pmprogateway_pixelpay.php' );
-            
-
-
+        if (class_exists('PMProGateway')) {
+            require_once(PMPRO_PIXELPAY_DIR . '/classes/class.pmprogateway_pixelpay.php');
         } else {
         }
-    } catch ( Exception $e ) {
+    } catch (Exception $e) {
     }
 }
-add_action( 'plugins_loaded', 'pmpro_pixelpay_load_gateway' );
+add_action('plugins_loaded', 'pmpro_pixelpay_load_gateway');
 
 /**
  * Webhook para crear una orden pendiente.
  */
-function pmpro_pixelpay_create_order() {
+function pmpro_pixelpay_create_order()
+{
     try {
-        require_once( PMPRO_PIXELPAY_DIR . "/webhooks/create-order.php" );
-    } catch ( Exception $e ) {
+        require_once(PMPRO_PIXELPAY_DIR . "/webhooks/create-order.php");
+    } catch (Exception $e) {
     } finally {
         exit;
     }
@@ -43,10 +42,11 @@ function pmpro_pixelpay_create_order() {
 /**
  * Webhook para actualizar una orden existente.
  */
-function pmpro_pixelpay_update_order() {
+function pmpro_pixelpay_update_order()
+{
     try {
-        require_once( PMPRO_PIXELPAY_DIR . "/webhooks/update-order.php" );
-    } catch ( Exception $e ) {
+        require_once(PMPRO_PIXELPAY_DIR . "/webhooks/update-order.php");
+    } catch (Exception $e) {
         error_log('pmpro_pixelpay_update_order: Error al procesar la solicitud - ' . $e->getMessage());
     } finally {
         exit;
@@ -56,19 +56,21 @@ function pmpro_pixelpay_update_order() {
 /**
  * Load the languages folder for translations.
  */
-function pmpro_pixelpay_load_textdomain() {
+function pmpro_pixelpay_load_textdomain()
+{
     try {
-        load_plugin_textdomain( 'pmpro-pixelpay' );
-    } catch ( Exception $e ) {
+        load_plugin_textdomain('pmpro-pixelpay');
+    } catch (Exception $e) {
         error_log('pmpro_pixelpay_load_textdomain: Error al cargar el texto del plugin - ' . $e->getMessage());
     }
 }
-add_action( 'plugins_loaded', 'pmpro_pixelpay_load_textdomain' );
+add_action('plugins_loaded', 'pmpro_pixelpay_load_textdomain');
 
 // Función para modificar la longitud del campo subscription_transaction_id
-function modificar_subscription_transaction_id() {
+function modificar_subscription_transaction_id()
+{
     global $wpdb;
-    
+
     // Modificar la longitud del campo a 64 caracteres
     $wpdb->query("ALTER TABLE {$wpdb->prefix}pmpro_subscriptions MODIFY subscription_transaction_id VARCHAR(64) NOT NULL");
     $wpdb->query("ALTER TABLE {$wpdb->prefix}pmpro_membership_orders MODIFY subscription_transaction_id VARCHAR(64) NOT NULL");
@@ -80,27 +82,31 @@ register_activation_hook(__FILE__, 'modificar_subscription_transaction_id');
 // Filtro para personalizar los campos de facturación
 
 // Forzar la moneda a HNL en PMPro
-function my_pmpro_set_currency() {
+function my_pmpro_set_currency()
+{
     return 'HNL'; // Cambiar 'HNL' a la moneda deseada
 }
 add_filter('pmpro_currency', 'my_pmpro_set_currency');
 
 // Asegurarse de que la moneda se envíe correctamente a la API de PixelPay
-function my_pmpro_send_to_pixelpay_with_currency($args) {
+function my_pmpro_send_to_pixelpay_with_currency($args)
+{
     $args['currency'] = 'HNL'; // Asegúrate de enviar la moneda correcta a la API de PixelPay
     return $args;
 }
 add_filter('pmpro_pixelpay_api_request', 'my_pmpro_send_to_pixelpay_with_currency');
 
 // Agregar HNL a la lista de monedas de PMPro
-function pmpro_currencies_hnl($currencies) {
-    $currencies['HNL'] = __( 'Lempira Hondureño (HNL)', 'pmpro' );
+function pmpro_currencies_hnl($currencies)
+{
+    $currencies['HNL'] = __('Lempira Hondureño (HNL)', 'pmpro');
     return $currencies;
 }
-add_filter( 'pmpro_currencies', 'pmpro_currencies_hnl' );
+add_filter('pmpro_currencies', 'pmpro_currencies_hnl');
 
 // Función para cargar los scripts necesarios
-function agregar_pixelpay_sdk() {
+function agregar_pixelpay_sdk()
+{
     if (pmpro_is_checkout()) { // Solo en la página de checkout de PMPro
         // Cargar el script del SDK de PixelPay
         wp_enqueue_script('pixelpay-sdk', 'https://unpkg.com/@pixelpay/sdk-core', array(), null, true);
@@ -119,7 +125,8 @@ add_action('wp_enqueue_scripts', 'agregar_pixelpay_sdk');
 add_action('wp_ajax_crear_orden_pixelpay', 'crear_orden_pixelpay');
 add_action('wp_ajax_nopriv_crear_orden_pixelpay', 'crear_orden_pixelpay');
 
-function crear_orden_pixelpay() {
+function crear_orden_pixelpay()
+{
     check_ajax_referer('pmpro_checkout_nonce', 'nonce');
 
     global $pmpro_checkout_redirect;
@@ -128,13 +135,13 @@ function crear_orden_pixelpay() {
     add_filter('pmpro_checkout_redirect_url', '__return_false', 20);
 
     // Verificar que se reciba el ID de la membresía
-    if ( empty( $_POST['membership_id'] ) ) {
-        wp_send_json_error( [ 'message' => 'Falta el ID de la membresía.' ] );
+    if (empty($_POST['membership_id'])) {
+        wp_send_json_error(['message' => 'Falta el ID de la membresía.']);
     }
-    $membership_id = intval( $_POST['membership_id'] );
+    $membership_id = intval($_POST['membership_id']);
 
     // Si el usuario está logueado, usar el usuario actual; de lo contrario, crear la orden sin usuario (user_id = 0)
-    if ( is_user_logged_in() ) {
+    if (is_user_logged_in()) {
         $current_user = wp_get_current_user();
         $user_id      = $current_user->ID;
     } else {
@@ -143,34 +150,35 @@ function crear_orden_pixelpay() {
 
     // Obtener el nivel de membresía
     $membership_level = new PMPro_Membership_Level();
-    $level            = $membership_level->get_membership_level( $membership_id );
-    if ( ! $level || empty( $level->initial_payment ) ) {
-        wp_send_json_error( [ 'message' => 'No se pudo obtener el precio de la membresía.' ] );
+    $level            = $membership_level->get_membership_level($membership_id);
+    if (! $level || empty($level->initial_payment)) {
+        wp_send_json_error(['message' => 'No se pudo obtener el precio de la membresía.']);
     }
-    error_log( "Detalles del nivel de membresía: " . print_r( $level, true ) );
-    $monto = floatval( $level->initial_payment );
+    $monto = floatval($level->initial_payment);
 
-    // Crear la orden en PMPro, asignando el user_id obtenido (si el usuario está logueado, se asigna su ID)
+    // Crear la orden en PMPro
     $order                      = new MemberOrder();
     $order->Gateway             = "pixelpay";
-    $order->Gateway_environment = pmpro_getOption( "gateway_environment" );
+    $order->Gateway_environment = pmpro_getOption("gateway_environment");
     $order->total               = $monto;
     $order->subtotal            = $monto;
     $order->membership_id       = $membership_id;
-    $order->user_id             = $user_id;
+    $order->user_id = $user_id; // Siempre asignar user_id, aunque sea 0
+
     $order->saveOrder();
 
-    if ( ! $order->id ) {
-        wp_send_json_error( [ 'message' => 'No se pudo generar la orden.' ] );
+    if (! $order->id) {
+        wp_send_json_error(['message' => 'No se pudo generar la orden.']);
     }
 
+
     // Procesar la orden con PMPro
-    $gateway = new PMProGateway( "pixelpay" );
-    $result  = $gateway->process( $order );
+    $gateway = new PMProGateway("pixelpay");
+    $result  = $gateway->process($order);
 
     // Si el usuario está logueado, asignar el nivel de membresía al usuario
-    if ( $user_id > 0 ) {
-        pmpro_changeMembershipLevel( $membership_id, $user_id );
+    if ($user_id > 0) {
+        pmpro_changeMembershipLevel($membership_id, $user_id);
     }
 
     // Actualizar los detalles del nivel en la tabla pmpro_memberships_users
@@ -188,23 +196,23 @@ function crear_orden_pixelpay() {
             'initial_payment' => $initial_payment,
             'billing_amount'  => $billing_amount,
         ),
-        array( 'user_id' => $user_id ),
-        array( '%s', '%s', '%s', '%s' ),
-        array( '%d' )
+        array('user_id' => $user_id),
+        array('%s', '%s', '%s', '%s'),
+        array('%d')
     );
 
-    if ( ! empty( $order->error ) || ! $result ) {
-        wp_send_json_error( [ 'message' => ! empty( $order->error ) ? $order->error : 'Error procesando la orden.' ] );
+    if (! empty($order->error) || ! $result) {
+        wp_send_json_error(['message' => ! empty($order->error) ? $order->error : 'Error procesando la orden.']);
     }
 
     // Devolver la respuesta con la orden generada y otros datos importantes
-    wp_send_json_success( [
+    wp_send_json_success([
         'order_id'      => $order->code,
         'monto'         => $order->total,
         'currency'      => $order->currency,
         'membership_id' => $membership_id,
         'user_id'       => $user_id,
-    ] );
+    ]);
 }
 
 
@@ -213,17 +221,18 @@ function crear_orden_pixelpay() {
 
 
 
-function cargar_pixelpay_js() {
-    if ( pmpro_is_checkout() ) { // Solo en la página de checkout de PMPro
-        $script_path = plugin_dir_path( __FILE__ ) . 'js/pixelpay-payment.js';
-        $script_url  = plugins_url( 'js/pixelpay-payment.js', __FILE__ );
-        $version     = filemtime( $script_path ); // Usa la fecha de modificación como versión
+function cargar_pixelpay_js()
+{
+    if (pmpro_is_checkout()) { // Solo en la página de checkout de PMPro
+        $script_path = plugin_dir_path(__FILE__) . 'js/pixelpay-payment.js';
+        $script_url  = plugins_url('js/pixelpay-payment.js', __FILE__);
+        $version     = filemtime($script_path); // Usa la fecha de modificación como versión
 
         wp_enqueue_script(
-            'pixelpay-payment', 
-            $script_url, 
-            array('jquery'), 
-            $version, 
+            'pixelpay-payment',
+            $script_url,
+            array('jquery'),
+            $version,
             true
         );
 
@@ -248,13 +257,14 @@ add_action('wp_enqueue_scripts', 'cargar_pixelpay_js');
 add_action('wp_ajax_borrar_orden_pixelpay', 'borrar_orden_pixelpay');
 add_action('wp_ajax_nopriv_borrar_orden_pixelpay', 'borrar_orden_pixelpay');
 
-function borrar_orden_pixelpay() {
+function borrar_orden_pixelpay()
+{
     check_ajax_referer('pmpro_checkout_nonce', 'nonce');
 
     // Sanitizamos los datos recibidos
     $hash = sanitize_text_field($_POST['hash']);
 
-    if ( empty($_POST['order_id']) ) {
+    if (empty($_POST['order_id'])) {
         wp_send_json_error(['message' => 'No se recibió el ID de la orden.']);
     }
 
@@ -264,7 +274,7 @@ function borrar_orden_pixelpay() {
     // Buscar la orden en PMPro
     $order = new MemberOrder($order_id);
 
-    if ( !$order->id ) {
+    if (!$order->id) {
         wp_send_json_error(['message' => 'No se encontró la orden.']);
     }
 
@@ -303,11 +313,11 @@ function borrar_orden_pixelpay() {
     );
 
     // Si el usuario no está logueado, se puede proceder a eliminarlo (según la lógica actual)
-    if ( !$user_id || !is_user_logged_in() ) {
-        if ( $user_id ) {
+    if (!$user_id || !is_user_logged_in()) {
+        if ($user_id) {
             require_once ABSPATH . 'wp-admin/includes/user.php';
             $deleted = wp_delete_user($user_id);
-            if ( !$deleted ) {
+            if (!$deleted) {
                 wp_send_json_error(['message' => 'No se pudo eliminar el usuario.']);
             }
         }
@@ -323,10 +333,11 @@ function borrar_orden_pixelpay() {
 add_action('wp_ajax_crear_usuario', 'crear_usuario');
 add_action('wp_ajax_nopriv_crear_usuario', 'crear_usuario');
 
-function crear_usuario() {
+function crear_usuario()
+{
     check_ajax_referer('pmpro_checkout_nonce', 'nonce');
 
-    if ( is_user_logged_in() ) {
+    if (is_user_logged_in()) {
         $current_user = wp_get_current_user();
         wp_send_json_success([
             'message' => 'Usuario ya logueado.',
@@ -334,7 +345,7 @@ function crear_usuario() {
         ]);
     }
 
-    if ( empty($_POST['user_email']) || empty($_POST['username']) || empty($_POST['password']) ) {
+    if (empty($_POST['user_email']) || empty($_POST['username']) || empty($_POST['password'])) {
         wp_send_json_error(['message' => 'Faltan datos para crear el usuario.']);
     }
 
@@ -342,12 +353,12 @@ function crear_usuario() {
     $username   = sanitize_user($_POST['username']);
     $password   = sanitize_text_field($_POST['password']);
 
-    if ( email_exists($user_email) || username_exists($username) ) {
+    if (email_exists($user_email) || username_exists($username)) {
         wp_send_json_error(['message' => 'El usuario ya existe.']);
     }
 
     $user_id = wp_create_user($username, $password, $user_email);
-    if ( is_wp_error($user_id) ) {
+    if (is_wp_error($user_id)) {
         wp_send_json_error(['message' => 'Error al crear el usuario: ' . $user_id->get_error_message()]);
     }
 
@@ -363,56 +374,83 @@ function crear_usuario() {
     ]);
 }
 
-add_action('wp_ajax_asociar_orden', 'asociar_orden');
-add_action('wp_ajax_nopriv_asociar_orden', 'asociar_orden');
 
-function asociar_orden() {
+
+
+
+add_action('wp_ajax_asignar_orden_usuario', 'asignar_orden_usuario');
+add_action('wp_ajax_nopriv_asignar_orden_usuario', 'asignar_orden_usuario');
+
+function asignar_orden_usuario() {
     try {
+        // Verificar nonce
         check_ajax_referer('pmpro_checkout_nonce', 'nonce');
+        wp_send_json_success(['message' => 'Nonce verificado.']);
 
-        if ( empty($_POST['user_id']) || empty($_POST['order_id']) ) {
+        // Verificar si los parámetros 'user_id' y 'order_id' están presentes
+        if (empty($_POST['user_id']) || empty($_POST['order_id'])) {
             wp_send_json_error(['message' => 'Faltan datos para asociar la orden.']);
         }
 
-        $user_id = intval($_POST['user_id']);
-        $order_code = sanitize_text_field($_POST['order_id']); // asumimos que el valor es el código de la orden
+        wp_send_json_success(['message' => 'Parametros recibidos: user_id y order_id.']);
 
-        // Utilizamos la clase MemberOrder de PMPro para cargar la orden por código.
-        $order = new MemberOrder();
-        $order->getMemberOrderByCode($order_code);
-        if ( empty($order->id) ) {
-            throw new Exception("Orden no encontrada para el código: " . $order_code);
+        $user_id = intval($_POST['user_id']);
+        $order_code = sanitize_text_field($_POST['order_id']); // Código de la orden
+
+        // Cargar la orden usando la clase MemberOrder
+        if (!class_exists('MemberOrder')) {
+            wp_send_json_error(['message' => 'La clase MemberOrder no está disponible.']);
         }
 
-        // Actualizamos el user_id en el objeto de la orden.
-        $order->user_id = $user_id;
+        wp_send_json_success(['message' => 'Clase MemberOrder disponible.']);
 
-        // Guardamos la orden. La función saveOrder() se encarga de actualizar la base de datos.
-        $saved = $order->saveOrder();
-        if ( ! $saved ) {
-            throw new Exception("No se pudo guardar la orden actualizada.");
+        $order = new MemberOrder($order_code);
+
+        // Verificar si la orden es válida
+        if (empty($order) || empty($order->id)) {
+            wp_send_json_error(['message' => 'Orden no encontrada para el código: ' . $order_code]);
+        }
+
+        wp_send_json_success(['message' => 'Orden cargada con éxito.', 'order_id' => $order->id]);
+
+        // Actualizar el user_id en la orden
+        $order->user_id = $user_id;
+        $updated = $order->saveOrder();
+
+        if (!$updated) {
+            wp_send_json_error(['message' => 'No se pudo actualizar la orden.']);
         }
 
         wp_send_json_success([
-            'message'   => 'Orden actualizada correctamente.',
-            'user_id'   => $user_id,
+            'message'    => 'Orden asociada correctamente.',
             'order_code' => $order_code,
+            'user_id'    => $user_id
         ]);
+
     } catch (Exception $e) {
-        error_log("Error en asociar_orden: " . $e->getMessage());
         wp_send_json_error(['message' => 'Error: ' . $e->getMessage()]);
     }
 }
 
 
+
+
+
+
+
+
+
+
+
 add_action('wp_ajax_asignar_membresia_detalles', 'asignar_membresia_detalles');
 add_action('wp_ajax_nopriv_asignar_membresia_detalles', 'asignar_membresia_detalles');
 
-function asignar_membresia_detalles() {
+function asignar_membresia_detalles()
+{
     try {
         check_ajax_referer('pmpro_checkout_nonce', 'nonce');
 
-        if ( empty($_POST['user_id']) || empty($_POST['membership_id']) ) {
+        if (empty($_POST['user_id']) || empty($_POST['membership_id'])) {
             wp_send_json_error(['message' => 'Faltan datos para asignar la membresía.']);
         }
 
@@ -471,7 +509,8 @@ function asignar_membresia_detalles() {
 
 //funcion para generar la url 
 
-function obtener_url_factura() {
+function obtener_url_factura()
+{
     check_ajax_referer('pmpro_checkout_nonce', 'nonce');
 
     if (empty($_POST['order_id'])) {
@@ -504,7 +543,8 @@ add_action('wp_ajax_nopriv_obtener_url_factura', 'obtener_url_factura');
 add_action('wp_ajax_generar_nuevo_nonce', 'generar_nuevo_nonce');
 add_action('wp_ajax_nopriv_generar_nuevo_nonce', 'generar_nuevo_nonce');
 
-function generar_nuevo_nonce() {
+function generar_nuevo_nonce()
+{
     wp_send_json_success([
         'nonce' => wp_create_nonce('pmpro_checkout_nonce') // Genera un nuevo nonce
     ]);
@@ -514,7 +554,8 @@ function generar_nuevo_nonce() {
 
 //Funcion para actualizar el token
 add_action('wp_ajax_actualizar_token_transaccion', 'actualizar_token_transaccion');
-function actualizar_token_transaccion() {
+function actualizar_token_transaccion()
+{
     if (isset($_POST['order_id']) && isset($_POST['token'])) {
         global $wpdb;
 
@@ -548,14 +589,15 @@ function actualizar_token_transaccion() {
 
 add_action('wp_ajax_actualizar_fecha_fin_membresia', 'actualizar_fecha_fin_membresia');
 
-function actualizar_fecha_fin_membresia() {
+function actualizar_fecha_fin_membresia()
+{
     if (!isset($_POST['order_id'])) {
         error_log("Error: Falta el parámetro order_id.");
         wp_send_json_error('Faltan parámetros');
     }
 
     global $wpdb;
-    
+
     $order_id = sanitize_text_field($_POST['order_id']);
     error_log("Procesando actualización de membresía para la orden con código: " . $order_id);
 
@@ -610,7 +652,7 @@ function actualizar_fecha_fin_membresia() {
     } else {
         $base_timestamp = strtotime($currentEnddate);
     }
-    
+
     // Calcular la nueva fecha de expiración según el ciclo
     switch ($cycle_period) {
         case 'day':
@@ -654,7 +696,7 @@ function actualizar_fecha_fin_membresia() {
 
 //HOOK para eliminar el usuario cuando una membresia expira 
 
-add_action('pmpro_membership_post_membership_expiry', function($user_id, $membership_id) {
+add_action('pmpro_membership_post_membership_expiry', function ($user_id, $membership_id) {
     require_once ABSPATH . 'wp-admin/includes/user.php'; // Incluir funciones para eliminar usuarios.
 
     $deleted = wp_delete_user($user_id);
@@ -668,7 +710,3 @@ add_action('pmpro_membership_post_membership_expiry', function($user_id, $member
 
 
 //Funcion para modificar el cron de pago recurrente
-
-
-
-?>

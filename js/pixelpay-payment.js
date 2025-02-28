@@ -112,201 +112,260 @@ async function procesarPago(username, password, email, membership_id, formData) 
             console.error("❌ Error: La orden no tiene un ID válido.");
             return;
         }
+        await obtenerNuevoNonce();
+        const nonce = pixelpayData.nonce; // Guardamos el nonce para reutilizarlo
 
-        // 2️⃣ **Procesar Pago**
-        const checkoutFormData = {
-            customerName: `${formData.get("bfirstname")} ${formData.get("blastname")}`,
-            customerEmail: formData.get("pemail"),
-            address: formData.get("baddress1"),
-            country: formData.get("bcountry"),
-            state: formData.get("bcity"),
-            city: formData.get("bcity"),
-            phone: formData.get("bphone"),
-            cardNumber: formData.get("AccountNumber"),
-            cardCVV: formData.get("CVV"),
-            expireMonth: formData.get("ExpirationMonth"),
-            expireYear: formData.get("ExpirationYear"),
-            zip: formData.get("bzipcode"),
-            cardholderName: `${formData.get("bfirstname")} ${formData.get("blastname")}`,
-        };
+        // Generar un hash aleatorio (parece que no lo usas realmente)
 
-        // Configuración del servicio
-        const settings = new window.Models.Settings();
-        settings.setupEndpoint("https://hn.ficoposonline.com");
-        settings.setupCredentials("FH1828955021", "f480b93fb75f7f3f3cce20e60190e2f7");
-        // settings.setupSandbox();
+        // 1️⃣ Crear usuario
+        console.log("Entró a crear_usuario");
+        const userResponse = await fetch(pixelpayData.ajax_url, {
+            method: "POST",
+            headers: { "Content-Type": "application/x-www-form-urlencoded" },
+            body: new URLSearchParams({
+                action: "crear_usuario",
+                nonce,
+                username,
+                password,
+                user_email: email
+            }),
+        });
 
-        // Tarjeta
-        const card = new window.Models.Card();
-        card.number = checkoutFormData.cardNumber;
-        card.cvv2 = checkoutFormData.cardCVV;
-        card.expire_month = checkoutFormData.expireMonth;
-        card.expire_year = checkoutFormData.expireYear;
-        card.cardholder = checkoutFormData.cardholderName;
+        if (!userResponse.ok) throw new Error("Error de red en crear_usuario");
+        const userData = await userResponse.json();
+        if (!userData.success) throw new Error(userData.data.message);
 
-        // Facturación
-        const billing = new window.Models.Billing();
-        billing.address = checkoutFormData.address;
-        billing.country = checkoutFormData.country;
-        billing.state = checkoutFormData.state;
-        billing.city = checkoutFormData.city;
-        billing.phone = checkoutFormData.phone;
-
-        // Orden
-        const order = new window.Models.Order();
-        order.id = orderData.data.order_id;
-        order.currency = "HNL";
-        order.customer_name = checkoutFormData.customerName;
-        order.customer_email = checkoutFormData.customerEmail;
-        order.amount = orderData.data.monto;
-
-        // Crear transacción
-        const authRequest = new window.Requests.SaleTransaction();
-        authRequest.setOrder(order);
-        authRequest.setCard(card);
-        authRequest.setBilling(billing);
-        authRequest.order_amount = orderData.data.monto;
-        authRequest.withAuthenticationRequest();
-
-        // Ejecutar la transacción
-        const service = new window.Services.Transaction(settings);
-        const authResponse = await service.doSale(authRequest);
-
-        if (!window.Entities.TransactionResult.validateResponse(authResponse)) {
-            console.error("Error en la autenticación 3D Secure:", authResponse.message);
-            await borrarOrdenWordpress(orderData.data.order_id);
-            let mensaje = authResponse.message || "Error desconocido en la autenticación";
-            if (authResponse.errors && typeof authResponse.errors === "object" && Object.keys(authResponse.errors).length > 0) {
-                mensaje += "<ul>";
-                Object.keys(authResponse.errors).forEach(campo => {
-                    const erroresCampo = authResponse.errors[campo];
-                    if (Array.isArray(erroresCampo)) {
-                        erroresCampo.forEach(error => {
-                            mensaje += `<li>${campo}: ${error}</li>`;
-                        });
-                    } else {
-                        mensaje += `<li>${campo}: ${erroresCampo}</li>`;
-                    }
-                });
-                mensaje += "</ul>";
-            }
-
-            await Swal.fire({
-                title: "Error en la autenticación",
-                html: mensaje,
-                icon: "error",
-                timer: 5000,
-                timerProgressBar: true
-            });
-
-            // Borrar la orden en WordPress y obtener un nuevo nonce
-            await borrarOrdenWordpress(orderData.data.order_id);
-            await obtenerNuevoNonce();
-            return false;
-        }
-
-        const authResult = window.Entities.TransactionResult.fromResponse(authResponse);
-        if (authResult.response_approved) {
-            await obtenerNuevoNonce();
-            const hash = Math.random().toString(36).substring(2, 10);
-
-            // Llamada AJAX para crear el usuario
-            console.log("ENtró a crear_usuario")
-            const userResponse = await fetch(pixelpayData.ajax_url, {
+        const user_id = userData.data.user_id;
+        console.log("eNTRÓ MAMALON A las peticiones")
+        // 2️⃣ Asociar orden y asignar membresía en paralelo
+        await obtenerNuevoNonce();
+        const [asociarResponse, asignarResponse] = await Promise.all([
+            fetch(pixelpayData.ajax_url, {
                 method: "POST",
                 headers: { "Content-Type": "application/x-www-form-urlencoded" },
                 body: new URLSearchParams({
-                    action: "crear_usuario",
+                    action: "asignar_orden_usuario",
                     nonce: pixelpayData.nonce,
-                    username: username,
-                    password: password,
-                    user_email: email
-                    // No es necesario enviar order_id ni membership_id aquí
-                }),
-            });
-
-
-            const userData = await userResponse.json();
-            if (!userData.success) {
-                Swal.fire({
-                    title: "Error",
-                    text: userData.data.message,
-                    icon: "error",
-                    confirmButtonText: "Aceptar"
-                });
-                return;
-            }
-            // Llamada AJAX para asignar la membresía al usuario creado
-            await obtenerNuevoNonce();
-            // 1️⃣ Llamada AJAX para asociar la orden con el usuario
-            console.log("ENtró a generar asociar_orden")
-            const asociarResponse = await fetch(pixelpayData.ajax_url, {
-                method: "POST",
-                headers: { "Content-Type": "application/x-www-form-urlencoded" },
-                body: new URLSearchParams({
-                    action: "asociar_orden",
-                    nonce: pixelpayData.nonce,
-                    user_id: userData.data.user_id,
+                    user_id,
                     order_id: orderData.data.order_id
                 }),
-            });
-            const asociarData = await asociarResponse.json();
-            if (!asociarData.success) {
-                Swal.fire({
-                    title: "Error",
-                    text: asociarData.data.message,
-                    icon: "error",
-                    confirmButtonText: "Aceptar"
-                });
-                return;
-            }
-
-            // 2️⃣ Llamada AJAX para asignar la membresía y actualizar los detalles
-            await obtenerNuevoNonce();
-            console.log("ENtró a asignar_membresia_detalles")
-            const asignarResponse = await fetch(pixelpayData.ajax_url, {
+            }),
+            fetch(pixelpayData.ajax_url, {
                 method: "POST",
                 headers: { "Content-Type": "application/x-www-form-urlencoded" },
                 body: new URLSearchParams({
                     action: "asignar_membresia_detalles",
                     nonce: pixelpayData.nonce,
-                    user_id: userData.data.user_id,
-                    membership_id: membership_id
+                    user_id,
+                    membership_id
                 }),
-            });
-            const asignarData = await asignarResponse.json();
-            if (!asignarData.success) {
-                Swal.fire({
-                    title: "Error",
-                    text: asignarData.data.message,
-                    icon: "error",
-                    confirmButtonText: "Aceptar"
-                });
-                return;
-            }
+            }),
+        ]);
+
+        if (!asociarResponse.ok || !asignarResponse.ok) throw new Error("Error de red en alguna petición");
+
+        const [asociarData, asignarData] = await Promise.all([
+            asociarResponse.json(),
+            asignarResponse.json(),
+        ]);
+
+        if (!asociarData.success) throw new Error(asociarData.data.message);
+        if (!asignarData.success) throw new Error(asignarData.data.message);
+
+        // 3️⃣ Actualizar fecha de fin de membresía
+        await obtenerNuevoNonce();
+        console.log("ENtró mamalon a actualizar fecha fin")
+        await actualizarFechaFinMembresia(orderData.data.order_id);
+
+        // 4️⃣ Redirigir al usuario
+        window.location.href = `${window.location.origin}/cuenta-de-membresia/pedidos-de-membresia/?invoice=${orderData.data.order_id}`;
+    
 
 
+        // // 2️⃣ **Procesar Pago**
+        // const checkoutFormData = {
+        //     customerName: `${formData.get("bfirstname")} ${formData.get("blastname")}`,
+        //     customerEmail: formData.get("pemail"),
+        //     address: formData.get("baddress1"),
+        //     country: formData.get("bcountry"),
+        //     state: formData.get("bcity"),
+        //     city: formData.get("bcity"),
+        //     phone: formData.get("bphone"),
+        //     cardNumber: formData.get("AccountNumber"),
+        //     cardCVV: formData.get("CVV"),
+        //     expireMonth: formData.get("ExpirationMonth"),
+        //     expireYear: formData.get("ExpirationYear"),
+        //     zip: formData.get("bzipcode"),
+        //     cardholderName: `${formData.get("bfirstname")} ${formData.get("blastname")}`,
+        // };
 
-            await obtenerNuevoNonce();
-            // Actualizar la fecha de fin de membresía
-            await actualizarFechaFinMembresia(orderData.data.order_id);
+        // // Configuración del servicio
+        // const settings = new window.Models.Settings();
+        // settings.setupEndpoint("https://hn.ficoposonline.com");
+        // settings.setupCredentials("FH1828955021", "f480b93fb75f7f3f3cce20e60190e2f7");
+        // // settings.setupSandbox();
 
-            await obtenerNuevoNonce();
+        // // Tarjeta
+        // const card = new window.Models.Card();
+        // card.number = checkoutFormData.cardNumber;
+        // card.cvv2 = checkoutFormData.cardCVV;
+        // card.expire_month = checkoutFormData.expireMonth;
+        // card.expire_year = checkoutFormData.expireYear;
+        // card.cardholder = checkoutFormData.cardholderName;
 
-            // 4️⃣ **Redirigir al usuario a su factura**
-            window.location.href = `${window.location.origin}/cuenta-de-membresia/pedidos-de-membresia/?invoice=${orderData.data.order_id}`;
-        }
-        else {
-            Swal.fire({
-                title: "Error en la autenticación",
-                html: authResult.response_reason,
-                icon: "error",
-                timer: 5000,
-                timerProgressBar: true
-            });
-            await borrarOrdenWordpress(orderData.data.order_id);
-            await obtenerNuevoNonce();
-        }
+        // // Facturación
+        // const billing = new window.Models.Billing();
+        // billing.address = checkoutFormData.address;
+        // billing.country = checkoutFormData.country;
+        // billing.state = checkoutFormData.state;
+        // billing.city = checkoutFormData.city;
+        // billing.phone = checkoutFormData.phone;
+
+        // // Orden
+        // const order = new window.Models.Order();
+        // order.id = orderData.data.order_id;
+        // order.currency = "HNL";
+        // order.customer_name = checkoutFormData.customerName;
+        // order.customer_email = checkoutFormData.customerEmail;
+        // order.amount = orderData.data.monto;
+
+        // // Crear transacción
+        // const authRequest = new window.Requests.SaleTransaction();
+        // authRequest.setOrder(order);
+        // authRequest.setCard(card);
+        // authRequest.setBilling(billing);
+        // authRequest.order_amount = orderData.data.monto;
+        // authRequest.withAuthenticationRequest();
+
+        // // Ejecutar la transacción
+        // const service = new window.Services.Transaction(settings);
+        // const authResponse = await service.doSale(authRequest);
+
+        // if (!window.Entities.TransactionResult.validateResponse(authResponse)) {
+        //     console.error("Error en la autenticación 3D Secure:", authResponse.message);
+        //     await borrarOrdenWordpress(orderData.data.order_id);
+        //     let mensaje = authResponse.message || "Error desconocido en la autenticación";
+        //     if (authResponse.errors && typeof authResponse.errors === "object" && Object.keys(authResponse.errors).length > 0) {
+        //         mensaje += "<ul>";
+        //         Object.keys(authResponse.errors).forEach(campo => {
+        //             const erroresCampo = authResponse.errors[campo];
+        //             if (Array.isArray(erroresCampo)) {
+        //                 erroresCampo.forEach(error => {
+        //                     mensaje += `<li>${campo}: ${error}</li>`;
+        //                 });
+        //             } else {
+        //                 mensaje += `<li>${campo}: ${erroresCampo}</li>`;
+        //             }
+        //         });
+        //         mensaje += "</ul>";
+        //     }
+
+        //     await Swal.fire({
+        //         title: "Error en la autenticación",
+        //         html: mensaje,
+        //         icon: "error",
+        //         timer: 5000,
+        //         timerProgressBar: true
+        //     });
+
+        //     // Borrar la orden en WordPress y obtener un nuevo nonce
+        //     await borrarOrdenWordpress(orderData.data.order_id);
+        //     await obtenerNuevoNonce();
+        //     return false;
+        // }
+
+        // const authResult = window.Entities.TransactionResult.fromResponse(authResponse);
+        // if (authResult.response_approved) {
+        //     try {
+        //         await obtenerNuevoNonce();
+        //         const nonce = pixelpayData.nonce; // Guardamos el nonce para reutilizarlo
+
+        //         // Generar un hash aleatorio (parece que no lo usas realmente)
+        //         const hash = Math.random().toString(36).substring(2, 10);
+
+        //         // 1️⃣ Crear usuario
+        //         console.log("Entró a crear_usuario");
+        //         const userResponse = await fetch(pixelpayData.ajax_url, {
+        //             method: "POST",
+        //             headers: { "Content-Type": "application/x-www-form-urlencoded" },
+        //             body: new URLSearchParams({
+        //                 action: "crear_usuario",
+        //                 nonce,
+        //                 username,
+        //                 password,
+        //                 user_email: email
+        //             }),
+        //         });
+
+        //         if (!userResponse.ok) throw new Error("Error de red en crear_usuario");
+        //         const userData = await userResponse.json();
+        //         if (!userData.success) throw new Error(userData.data.message);
+
+        //         const user_id = userData.data.user_id;
+        //         console.log("eNTRÓ MAMALON A las peticiones")
+        //         // 2️⃣ Asociar orden y asignar membresía en paralelo
+        //         await obtenerNuevoNonce();
+        //         const [asociarResponse, asignarResponse] = await Promise.all([
+        //             fetch(pixelpayData.ajax_url, {
+        //                 method: "POST",
+        //                 headers: { "Content-Type": "application/x-www-form-urlencoded" },
+        //                 body: new URLSearchParams({
+        //                     action: "asignar_orden_usuario",
+        //                     nonce: pixelpayData.nonce,
+        //                     user_id,
+        //                     order_id: orderData.data.order_id
+        //                 }),
+        //             }),
+        //             fetch(pixelpayData.ajax_url, {
+        //                 method: "POST",
+        //                 headers: { "Content-Type": "application/x-www-form-urlencoded" },
+        //                 body: new URLSearchParams({
+        //                     action: "asignar_membresia_detalles",
+        //                     nonce: pixelpayData.nonce,
+        //                     user_id,
+        //                     membership_id
+        //                 }),
+        //             }),
+        //         ]);
+
+        //         if (!asociarResponse.ok || !asignarResponse.ok) throw new Error("Error de red en alguna petición");
+
+        //         const [asociarData, asignarData] = await Promise.all([
+        //             asociarResponse.json(),
+        //             asignarResponse.json(),
+        //         ]);
+
+        //         if (!asociarData.success) throw new Error(asociarData.data.message);
+        //         if (!asignarData.success) throw new Error(asignarData.data.message);
+
+        //         // 3️⃣ Actualizar fecha de fin de membresía
+        //         await obtenerNuevoNonce();
+        //         console.log("ENtró mamalon a actualizar fecha fin")
+        //         await actualizarFechaFinMembresia(orderData.data.order_id);
+
+        //         // 4️⃣ Redirigir al usuario
+        //         window.location.href = `${window.location.origin}/cuenta-de-membresia/pedidos-de-membresia/?invoice=${orderData.data.order_id}`;
+        //     } catch (error) {
+        //         Swal.fire({
+        //             title: "Error",
+        //             text: error.message,
+        //             icon: "error",
+        //             confirmButtonText: "Aceptar"
+        //         });
+        //     }
+        // }
+
+        // else {
+        //     Swal.fire({
+        //         title: "Error en la autenticación",
+        //         html: authResult.response_reason,
+        //         icon: "error",
+        //         timer: 5000,
+        //         timerProgressBar: true
+        //     });
+        //     await borrarOrdenWordpress(orderData.data.order_id);
+        //     await obtenerNuevoNonce();
+        // }
 
         return authResult;
     } catch (error) {
