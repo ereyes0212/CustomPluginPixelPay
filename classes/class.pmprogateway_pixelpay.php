@@ -70,7 +70,6 @@ class PMProGateway_Pixelpay extends PMProGateway
         add_filter('pmpro_currencies', array('PMProGateway_Pixelpay', 'mi_moneda_personalizada_pmpro'));
         add_filter('pmpro_currency', array('PMProGateway_Pixelpay', 'my_pmpro_set_currency'));
         add_filter('pmpro_currencies', array('PMProGateway_Pixelpay', 'pmpro_currencies_hnl'));
-        add_action('pmpro_save_membership_level', array('PMProGateway_Pixelpay', 'pmpro_pixelpay_membership_level_created'), 10, 1);
         add_filter('pmpro_registration_checks', array('PMProGateway_Pixelpay', 'my_pmpro_custom_registration_validation'));
         add_action('wp_ajax_get_states', array('PMProGateway_Pixelpay', 'get_states_ajax_handler'));
         add_action('wp_ajax_nopriv_get_states', array('PMProGateway_Pixelpay', 'get_states_ajax_handler'));
@@ -248,41 +247,6 @@ class PMProGateway_Pixelpay extends PMProGateway
     }
 
 
-    static function pmpro_pixelpay_membership_level_created($level_id)
-    {
-
-        try {
-            // Obtener el nivel de membresía usando el ID proporcionado
-            $level = new PMPro_Membership_Level($level_id);
-            $recurrencia = self::obtenerRecurrencia($level->__get('cycle_period'));
-            // Acceder a las propiedades del nivel de membresía utilizando __get
-            $data_to_send = array(
-                'id'                => $level->__get('id'), // ID del nivel de membresía
-                'nombre'            => $level->__get('name'), // Nombre del nivel
-                'precio'            => $level->__get('initial_payment'), // Pago inicial
-                'tipo_recurrencia'  => $recurrencia, // Tipo de recurrencia
-                'descripcion'       => $level->__get('description'), // Descripción del nivel
-            );
-
-
-            // Realizar la llamada a la API de PixelPay
-            $response = wp_remote_post('http://127.0.0.1:8082/createmembresia', array(
-                'method'    => 'POST',
-                'body'      => json_encode($data_to_send),
-                'headers'   => array(
-                    'Content-Type' => 'application/json',
-                ),
-            ));
-
-            if (is_wp_error($response)) {
-                $error_message = $response->get_error_message();
-                error_log('Error al enviar datos a la API: ' . $error_message);
-            } else {
-            }
-        } catch (Exception $e) {
-            error_log('Error al manejar la creación del nivel de membresía: ' . $e->getMessage());
-        }
-    }
 
     // Enganchar la función al evento de creación de nivel de membresía
 
@@ -523,62 +487,6 @@ class PMProGateway_Pixelpay extends PMProGateway
         );
     }
 
-
-    static function sendToPixelpay($order)
-    {
-        // Datos de la orden que enviarás a la API
-        $data = array(
-            'order_id' => $order->id,
-            'amount'   => $order->total, // Total de la orden
-            'currency' => $order->currency, // Moneda de la orden
-            'customer_name' => $order->customer_name,
-            'customer_email' => $order->customer_email,
-            // Agrega cualquier otro dato que la API requiera
-        );
-
-        // La URL de la API
-        $url = 'http://127.0.0.1:8000/api/procesar_suscripcion'; // URL de la API
-
-        // Prepara los datos en formato JSON
-        $json_data = json_encode($data);
-
-        // Configura las opciones de cURL
-        $ch = curl_init($url);
-        curl_setopt($ch, CURLOPT_RETURNTRANSFER, true); // Para que cURL devuelva la respuesta
-        curl_setopt($ch, CURLOPT_POST, true); // Usamos el método POST
-        curl_setopt($ch, CURLOPT_HTTPHEADER, array(
-            'Content-Type: application/json', // Indicamos que los datos son en formato JSON
-            // Si necesitas autenticación, añade el token aquí:
-            // 'Authorization: Bearer YOUR_API_KEY' // Si tu API requiere autenticación
-        ));
-        curl_setopt($ch, CURLOPT_POSTFIELDS, $json_data); // Datos a enviar
-
-        // Ejecuta la solicitud y obtiene la respuesta
-        $response = curl_exec($ch);
-
-        // Verifica si hubo un error en la ejecución de cURL
-        if (curl_errno($ch)) {
-            // Si hay error, lo registramos o mostramos
-            error_log('Error en cURL: ' . curl_error($ch));
-            return false; // O devuelve un mensaje de error
-        }
-
-        // Cierra la sesión de cURL
-        curl_close($ch);
-
-        // Decodifica la respuesta (si la API devuelve datos en JSON)
-        $response_data = json_decode($response, true);
-
-        // Verifica si la respuesta de la API es exitosa
-        if (isset($response_data['status']) && $response_data['status'] == 'success') {
-            // Procesa la respuesta de la API (por ejemplo, confirma la suscripción)
-            return true;
-        } else {
-            // Si la respuesta no es exitosa, maneja el error
-            error_log('Error en la respuesta de la API: ' . print_r($response_data, true));
-            return false;
-        }
-    }
 
 
     static function getDepartmentISOCode($department)

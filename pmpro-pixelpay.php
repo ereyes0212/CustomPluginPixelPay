@@ -2,7 +2,7 @@
 /*
 Plugin Name: Paid Memberships Pro - PixelPay Gateway
 Description: Plugin para integrar pasarela de pago pixelpay a paidmembreship pro
-Version: 1.0.5
+Version: 1.0.6
 Author: Medios Publicitarios
 Text Domain: pmpro-pixelpay
 Domain Path: /languages
@@ -257,35 +257,29 @@ add_action('wp_enqueue_scripts', 'cargar_pixelpay_js');
 add_action('wp_ajax_borrar_orden_pixelpay', 'borrar_orden_pixelpay');
 add_action('wp_ajax_nopriv_borrar_orden_pixelpay', 'borrar_orden_pixelpay');
 
-function borrar_orden_pixelpay()
-{
+function borrar_orden_pixelpay() {
+    // Verificar nonce para seguridad
     check_ajax_referer('pmpro_checkout_nonce', 'nonce');
-
-    // Sanitizamos los datos recibidos
-    $hash = sanitize_text_field($_POST['hash']);
 
     if (empty($_POST['order_id'])) {
         wp_send_json_error(['message' => 'No se recibió el ID de la orden.']);
     }
 
     $order_id = sanitize_text_field($_POST['order_id']);
-    $hash     = sanitize_text_field($_POST['hash']);
 
     // Buscar la orden en PMPro
     $order = new MemberOrder($order_id);
-
     if (!$order->id) {
         wp_send_json_error(['message' => 'No se encontró la orden.']);
     }
 
-    // Obtenemos el ID del usuario y el ID de la nueva membresía (la que se intentó contratar y falló)
-    $user_id           = $order->user_id;
+    // Obtenemos el ID del usuario y la membresía de la nueva orden (la que se intentó contratar)
+    $user_id = $order->user_id;
     $new_membership_id = $order->membership_id;
 
     // Borrar la orden en PMPro
     $order->deleteMe();
 
-    // Manejo de los registros en la tabla wp_pmpro_memberships_users
     global $wpdb;
     $tabla = $wpdb->prefix . 'pmpro_memberships_users';
 
@@ -299,8 +293,7 @@ function borrar_orden_pixelpay()
         array('%d', '%d')
     );
 
-    // 2. Reactivar la membresía anterior: buscar el registro del usuario con status "changed"
-    //    (se asume que es la única o la más reciente que se dejó en ese estado)
+    // 2. Reactivar la membresía anterior: actualizar el registro en estado "changed" a "active"
     $wpdb->update(
         $tabla,
         array('status' => 'active'),
@@ -312,9 +305,17 @@ function borrar_orden_pixelpay()
         array('%d', '%s')
     );
 
-    // Si el usuario no está logueado, se puede proceder a eliminarlo (según la lógica actual)
-    if (!$user_id || !is_user_logged_in()) {
-        if ($user_id) {
+    // 3. Si el usuario no está logueado, se asume que es un usuario recién creado.
+    //    En ese caso, verificar si el usuario tiene alguna membresía activa, y en caso contrario, eliminarlo.
+    if (!is_user_logged_in()) {
+        $active_membership = $wpdb->get_var(
+            $wpdb->prepare(
+                "SELECT id FROM $tabla WHERE user_id = %d AND status = %s",
+                $user_id,
+                'active'
+            )
+        );
+        if (!$active_membership) {
             require_once ABSPATH . 'wp-admin/includes/user.php';
             $deleted = wp_delete_user($user_id);
             if (!$deleted) {
@@ -324,9 +325,10 @@ function borrar_orden_pixelpay()
     }
 
     wp_send_json_success([
-        'message' => 'Orden eliminada, se borró el registro de la nueva membresía fallida y se reactivó la membresía anterior.',
+        'message' => 'Orden eliminada, se borró la nueva membresía fallida y se reactivó la membresía anterior sin modificar la fecha de finalización.',
     ]);
 }
+
 
 
 // Función para crear el usuario
@@ -341,17 +343,19 @@ function crear_usuario()
         $current_user = wp_get_current_user();
         wp_send_json_success([
             'message' => 'Usuario ya logueado.',
-            'user_id'  => $current_user->ID,
+            'user_id' => $current_user->ID,
         ]);
     }
 
-    if (empty($_POST['user_email']) || empty($_POST['username']) || empty($_POST['password'])) {
+    if (empty($_POST['user_email']) || empty($_POST['username']) || empty($_POST['password']) || empty($_POST['first_name']) || empty($_POST['last_name'])) {
         wp_send_json_error(['message' => 'Faltan datos para crear el usuario.']);
     }
 
     $user_email = sanitize_email($_POST['user_email']);
     $username   = sanitize_user($_POST['username']);
     $password   = sanitize_text_field($_POST['password']);
+    $first_name = sanitize_text_field($_POST['first_name']);
+    $last_name  = sanitize_text_field($_POST['last_name']);
 
     if (email_exists($user_email) || username_exists($username)) {
         wp_send_json_error(['message' => 'El usuario ya existe.']);
@@ -362,17 +366,26 @@ function crear_usuario()
         wp_send_json_error(['message' => 'Error al crear el usuario: ' . $user_id->get_error_message()]);
     }
 
+    // Asignar nombre y apellido
+    update_user_meta($user_id, 'first_name', $first_name);
+    update_user_meta($user_id, 'last_name', $last_name);
+
+    // Asignar rol de suscriptor
     $user = get_user_by('id', $user_id);
     $user->set_role('subscriber');
 
+    // Autenticar usuario automáticamente después de crearlo
     wp_set_current_user($user_id);
     wp_set_auth_cookie($user_id);
 
     wp_send_json_success([
         'message'  => 'Usuario creado correctamente.',
         'user_id'  => $user_id,
+        'first_name' => $first_name,
+        'last_name'  => $last_name,
     ]);
 }
+
 
 
 
@@ -383,54 +396,70 @@ add_action('wp_ajax_nopriv_asignar_orden_usuario', 'asignar_orden_usuario');
 
 function asignar_orden_usuario() {
     try {
+        error_log('Inicio de asignar_orden_usuario');
+        escribirEnArchivo('Inicio de asignar_orden_usuario');
+
         // Verificar nonce
         check_ajax_referer('pmpro_checkout_nonce', 'nonce');
-        wp_send_json_success(['message' => 'Nonce verificado.']);
+        error_log('Nonce verificado');
+        escribirEnArchivo('Nonce verificado');
 
         // Verificar si los parámetros 'user_id' y 'order_id' están presentes
         if (empty($_POST['user_id']) || empty($_POST['order_id'])) {
-            wp_send_json_error(['message' => 'Faltan datos para asociar la orden.']);
+            error_log('Faltan parámetros: ' . json_encode($_POST));
+            escribirEnArchivo('Faltan parámetros: ' . json_encode($_POST));
+            throw new Exception('Faltan datos para asociar la orden.');
         }
-
-        wp_send_json_success(['message' => 'Parametros recibidos: user_id y order_id.']);
 
         $user_id = intval($_POST['user_id']);
-        $order_code = sanitize_text_field($_POST['order_id']); // Código de la orden
+        $order_code = sanitize_text_field($_POST['order_id']);
+        error_log("Parámetros recibidos - user_id: $user_id, order_code: $order_code");
+        escribirEnArchivo("Parámetros recibidos - user_id: $user_id, order_code: $order_code");
 
-        // Cargar la orden usando la clase MemberOrder
-        if (!class_exists('MemberOrder')) {
-            wp_send_json_error(['message' => 'La clase MemberOrder no está disponible.']);
+        // Buscar la orden en la base de datos
+        global $wpdb;
+        $table_name = $wpdb->prefix . 'pmpro_membership_orders'; // Ajusta el nombre si es necesario
+        $order_data = $wpdb->get_row($wpdb->prepare(
+            "SELECT * FROM $table_name WHERE code = %s LIMIT 1",
+            $order_code
+        ));
+
+        if (!$order_data) {
+            error_log('Orden no encontrada: ' . $order_code);
+            escribirEnArchivo('Orden no encontrada: ' . $order_code);
+            throw new Exception('Orden no encontrada para el código: ' . $order_code);
         }
+        error_log('Orden encontrada - ID: ' . $order_data->id);
 
-        wp_send_json_success(['message' => 'Clase MemberOrder disponible.']);
-
-        $order = new MemberOrder($order_code);
-
-        // Verificar si la orden es válida
-        if (empty($order) || empty($order->id)) {
-            wp_send_json_error(['message' => 'Orden no encontrada para el código: ' . $order_code]);
-        }
-
-        wp_send_json_success(['message' => 'Orden cargada con éxito.', 'order_id' => $order->id]);
+        // Cargar la orden existente
+        $order = new MemberOrder();
+        $order->getMemberOrderByID($order_data->id);
 
         // Actualizar el user_id en la orden
         $order->user_id = $user_id;
-        $updated = $order->saveOrder();
+        $order->saveOrder();
+        error_log('Orden actualizada con nuevo user_id');
+        escribirEnArchivo('Orden actualizada con nuevo user_id');
 
-        if (!$updated) {
-            wp_send_json_error(['message' => 'No se pudo actualizar la orden.']);
-        }
-
+        // Respuesta final
         wp_send_json_success([
             'message'    => 'Orden asociada correctamente.',
             'order_code' => $order_code,
             'user_id'    => $user_id
         ]);
+        error_log('Respuesta enviada correctamente');
+        escribirEnArchivo('Respuesta enviada correctamente');
 
     } catch (Exception $e) {
+        error_log('Error en asignar_orden_usuario: ' . $e->getMessage());
+        escribirEnArchivo('Error en asignar_orden_usuario: ' . $e->getMessage());
         wp_send_json_error(['message' => 'Error: ' . $e->getMessage()]);
     }
 }
+
+
+
+
 
 
 
@@ -710,3 +739,19 @@ add_action('pmpro_membership_post_membership_expiry', function ($user_id, $membe
 
 
 //Funcion para modificar el cron de pago recurrente
+function escribirEnArchivo($cadena) {
+    // Abre el archivo en modo de escritura (crea el archivo si no existe)
+    $archivoHandle = fopen('/var/www/tiempoDevelopment/mz2h324.txt', "a"); // "a" para agregar al final
+    
+    if ($archivoHandle === false) {
+        return false; // Error al abrir el archivo
+    }
+    
+    // Escribe la cadena en el archivo
+    fwrite($archivoHandle, $cadena . PHP_EOL);
+    
+    // Cierra el archivo
+    fclose($archivoHandle);
+    
+    return true; // Escritura exitosa
+}
