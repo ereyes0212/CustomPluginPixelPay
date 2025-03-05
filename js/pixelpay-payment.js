@@ -242,8 +242,8 @@ async function procesarPago(username, password, email, membership_id, formData) 
                         body: new URLSearchParams({
                             action: "asignar_orden_usuario",
                             nonce: pixelpayData.nonce,
-                            user_id,
-                            order_id: orderData.data.order_id
+                            user_id_x: user_id,
+                            order_id_x: orderData.data.order_id
                         }),
                     }),
                     fetch(pixelpayData.ajax_url, {
@@ -267,10 +267,8 @@ async function procesarPago(username, password, email, membership_id, formData) 
 
                 if (!asociarData.success) throw new Error(asociarData.data.message);
                 if (!asignarData.success) throw new Error(asignarData.data.message);
-
                 // 3️⃣ Actualizar fecha de fin de membresía
-                await obtenerNuevoNonce();
-                console.log("ENtró mamalon a actualizar fecha fin")
+
                 await actualizarFechaFinMembresia(orderData.data.order_id);
 
                 // 4️⃣ Redirigir al usuario
@@ -367,7 +365,7 @@ function borrarOrdenWordpress(orderId) {
 
     // Datos para eliminar la orden
     const formData = {
-        order_id: orderId, // El ID de la orden que deseas eliminar
+        order_id_x: orderId, // El ID de la orden que deseas eliminar
         nonce: pixelpayData.nonce, // El nonce de seguridad que se pasa desde WordPress
         hash: hash, // El nonce de seguridad que se pasa desde WordPress
     };
@@ -463,7 +461,7 @@ async function actualizarFechaFinMembresia(orderId) {
 
     const formData = new URLSearchParams();
     formData.append('action', 'actualizar_fecha_fin_membresia');
-    formData.append('order_id', orderId);
+    formData.append('order_id_x', orderId);
     formData.append('hash', hash);
 
     try {

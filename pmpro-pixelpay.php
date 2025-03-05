@@ -118,6 +118,99 @@ function agregar_pixelpay_sdk()
 add_action('wp_enqueue_scripts', 'agregar_pixelpay_sdk');
 
 
+function custom_pmpro_login_page()
+{
+    ob_start();
+?>
+    <style>
+        body {
+            font-family: 'Arial', sans-serif;
+            margin: 0;
+            padding: 0;
+        }
+
+        .login-container {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            padding: 20px;
+        }
+
+        .login-box {
+            background: #fff;
+            padding: 50px;
+            border-radius: 12px;
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.2);
+            max-width: 600px;
+            width: 100%;
+            text-align: center;
+        }
+
+        .login-box img {
+            max-width: 220px;
+            margin-bottom: 20px;
+        }
+
+        .login-box h2 {
+            font-size: 24px;
+            color: #333;
+            margin-bottom: 20px;
+        }
+
+        .login-box form {
+            display: flex;
+            flex-direction: column;
+        }
+
+        .login-box input {
+            width: 100%;
+            padding: 14px;
+            margin-bottom: 12px;
+            border: 1px solid #ccc;
+            border-radius: 6px;
+            font-size: 16px;
+        }
+
+        .login-box input[type="submit"] {
+            background: #0073e6;
+            color: #fff;
+            border: none;
+            cursor: pointer;
+            font-size: 18px;
+            padding: 14px;
+            transition: background 0.3s ease;
+        }
+
+        .login-box input[type="submit"]:hover {
+            background: #005bb5;
+        }
+
+        .login-box a {
+            display: block;
+            margin-top: 15px;
+            color: #0073e6;
+            text-decoration: none;
+            font-size: 16px;
+        }
+
+        .login-box a:hover {
+            text-decoration: underline;
+        }
+    </style>
+
+    <div class="login-container">
+        <div class="login-box">
+            <img src="https://tiempo.hn/wp-content/uploads/2024/12/TiempoHonduras-1.webp" alt="Logo de Diario Tiempo">
+            <h2>Bienvenido a Diario Tiempo</h2>
+            <?php echo do_shortcode('[pmpro_login]'); ?>
+        </div>
+    </div>
+<?php
+    return ob_get_clean();
+}
+add_shortcode('custom_pmpro_login', 'custom_pmpro_login_page');
+
 
 
 
@@ -257,20 +350,21 @@ add_action('wp_enqueue_scripts', 'cargar_pixelpay_js');
 add_action('wp_ajax_borrar_orden_pixelpay', 'borrar_orden_pixelpay');
 add_action('wp_ajax_nopriv_borrar_orden_pixelpay', 'borrar_orden_pixelpay');
 
-function borrar_orden_pixelpay() {
+function borrar_orden_pixelpay()
+{
     // Verificar nonce para seguridad
     check_ajax_referer('pmpro_checkout_nonce', 'nonce');
 
-    if (empty($_POST['order_id'])) {
+    if (empty($_POST['order_id_x'])) {
         wp_send_json_error(['message' => 'No se recibió el ID de la orden.']);
     }
 
-    $order_id = sanitize_text_field($_POST['order_id']);
+    $order_id = sanitize_text_field($_POST['order_id_x']);
 
     // Buscar la orden en PMPro
     $order = new MemberOrder($order_id);
     if (!$order->id) {
-        wp_send_json_error(['message' => 'No se encontró la orden.']);
+        wp_send_json_success(['message' => 'No se encontró la orden. ya fue eliminada anteriormente' . $order_id]);
     }
 
     // Obtenemos el ID del usuario y la membresía de la nueva orden (la que se intentó contratar)
@@ -305,24 +399,7 @@ function borrar_orden_pixelpay() {
         array('%d', '%s')
     );
 
-    // 3. Si el usuario no está logueado, se asume que es un usuario recién creado.
-    //    En ese caso, verificar si el usuario tiene alguna membresía activa, y en caso contrario, eliminarlo.
-    if (!is_user_logged_in()) {
-        $active_membership = $wpdb->get_var(
-            $wpdb->prepare(
-                "SELECT id FROM $tabla WHERE user_id = %d AND status = %s",
-                $user_id,
-                'active'
-            )
-        );
-        if (!$active_membership) {
-            require_once ABSPATH . 'wp-admin/includes/user.php';
-            $deleted = wp_delete_user($user_id);
-            if (!$deleted) {
-                wp_send_json_error(['message' => 'No se pudo eliminar el usuario.']);
-            }
-        }
-    }
+
 
     wp_send_json_success([
         'message' => 'Orden eliminada, se borró la nueva membresía fallida y se reactivó la membresía anterior sin modificar la fecha de finalización.',
@@ -394,7 +471,8 @@ function crear_usuario()
 add_action('wp_ajax_asignar_orden_usuario', 'asignar_orden_usuario');
 add_action('wp_ajax_nopriv_asignar_orden_usuario', 'asignar_orden_usuario');
 
-function asignar_orden_usuario() {
+function asignar_orden_usuario()
+{
     try {
         error_log('Inicio de asignar_orden_usuario');
         escribirEnArchivo('Inicio de asignar_orden_usuario');
@@ -405,14 +483,14 @@ function asignar_orden_usuario() {
         escribirEnArchivo('Nonce verificado');
 
         // Verificar si los parámetros 'user_id' y 'order_id' están presentes
-        if (empty($_POST['user_id']) || empty($_POST['order_id'])) {
+        if (empty($_POST['user_id_x']) || empty($_POST['order_id_x'])) {
             error_log('Faltan parámetros: ' . json_encode($_POST));
             escribirEnArchivo('Faltan parámetros: ' . json_encode($_POST));
             throw new Exception('Faltan datos para asociar la orden.');
         }
 
-        $user_id = intval($_POST['user_id']);
-        $order_code = sanitize_text_field($_POST['order_id']);
+        $user_id = intval($_POST['user_id_x']);
+        $order_code = sanitize_text_field($_POST['order_id_x']);
         error_log("Parámetros recibidos - user_id: $user_id, order_code: $order_code");
         escribirEnArchivo("Parámetros recibidos - user_id: $user_id, order_code: $order_code");
 
@@ -449,7 +527,6 @@ function asignar_orden_usuario() {
         ]);
         error_log('Respuesta enviada correctamente');
         escribirEnArchivo('Respuesta enviada correctamente');
-
     } catch (Exception $e) {
         error_log('Error en asignar_orden_usuario: ' . $e->getMessage());
         escribirEnArchivo('Error en asignar_orden_usuario: ' . $e->getMessage());
@@ -620,14 +697,14 @@ add_action('wp_ajax_actualizar_fecha_fin_membresia', 'actualizar_fecha_fin_membr
 
 function actualizar_fecha_fin_membresia()
 {
-    if (!isset($_POST['order_id'])) {
+    if (!isset($_POST['order_id_x'])) {
         error_log("Error: Falta el parámetro order_id.");
         wp_send_json_error('Faltan parámetros');
     }
 
     global $wpdb;
 
-    $order_id = sanitize_text_field($_POST['order_id']);
+    $order_id = sanitize_text_field($_POST['order_id_x']);
     error_log("Procesando actualización de membresía para la orden con código: " . $order_id);
 
     // Buscar la orden en la base de datos utilizando el código (no el id numérico)
@@ -739,19 +816,20 @@ add_action('pmpro_membership_post_membership_expiry', function ($user_id, $membe
 
 
 //Funcion para modificar el cron de pago recurrente
-function escribirEnArchivo($cadena) {
+function escribirEnArchivo($cadena)
+{
     // Abre el archivo en modo de escritura (crea el archivo si no existe)
     $archivoHandle = fopen('/var/www/tiempoDevelopment/mz2h324.txt', "a"); // "a" para agregar al final
-    
+
     if ($archivoHandle === false) {
         return false; // Error al abrir el archivo
     }
-    
+
     // Escribe la cadena en el archivo
     fwrite($archivoHandle, $cadena . PHP_EOL);
-    
+
     // Cierra el archivo
     fclose($archivoHandle);
-    
+
     return true; // Escritura exitosa
 }
