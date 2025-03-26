@@ -105,17 +105,34 @@ function pmpro_currencies_hnl($currencies)
 add_filter('pmpro_currencies', 'pmpro_currencies_hnl');
 
 // Función para cargar los scripts necesarios
-function agregar_pixelpay_sdk()
-{
-    if (pmpro_is_checkout()) { // Solo en la página de checkout de PMPro
-        // Cargar el script del SDK de PixelPay
-        wp_enqueue_script('pixelpay-sdk', 'https://unpkg.com/@pixelpay/sdk-core', array(), null, true);
-
+function agregar_pixelpay_sdk() {
+    if ( pmpro_is_checkout() ) { // Solo en la página de checkout de PMPro
+        // Registrar el script del SDK de PixelPay
+        wp_register_script( 'pixelpay-sdk', 'https://unpkg.com/@pixelpay/sdk-core', array(), null, true );
+        
+        // Agregar un shim para definir globalmente 'exports' y 'require'
+        $shim = <<<EOT
+window.exports = {};
+window.require = function(module) {
+  console.warn('Se llamó a require para:', module, 'pero se está usando un shim.');
+  return {}; // Retorno dummy para evitar errores
+};
+EOT;
+        wp_add_inline_script( 'pixelpay-sdk', $shim, 'before' );
+        
+        // Encolar el script del SDK
+        wp_enqueue_script( 'pixelpay-sdk' );
+        
         // Cargar el script de SweetAlert desde CDN
-        wp_enqueue_script('sweetalert', 'https://cdn.jsdelivr.net/npm/sweetalert2@11', array(), null, true);
+        wp_enqueue_script( 'sweetalert', 'https://cdn.jsdelivr.net/npm/sweetalert2@11', array(), null, true );
+        
+        // Opcional: asignar el SDK a una variable global para facilitar su uso
+        $global_sdk = "window.PixelPaySDK = window.exports;";
+        wp_add_inline_script( 'pixelpay-sdk', $global_sdk, 'after' );
     }
 }
-add_action('wp_enqueue_scripts', 'agregar_pixelpay_sdk');
+add_action( 'wp_enqueue_scripts', 'agregar_pixelpay_sdk' );
+
 
 
 function custom_pmpro_login_page()

@@ -128,13 +128,13 @@ async function procesarPago(username, password, email, membership_id, formData) 
         };
 
         // Configuración del servicio
-        const settings = new window.Models.Settings();
+        const settings = new window.exports.Models.Settings();
         settings.setupEndpoint("https://hn.ficoposonline.com");
         settings.setupCredentials("FH1828955021", "f480b93fb75f7f3f3cce20e60190e2f7");
         // settings.setupSandbox();
 
         // Tarjeta
-        const card = new window.Models.Card();
+        const card = new window.exports.Models.Card();
         card.number = checkoutFormData.cardNumber;
         card.cvv2 = checkoutFormData.cardCVV;
         card.expire_month = checkoutFormData.expireMonth;
@@ -142,7 +142,7 @@ async function procesarPago(username, password, email, membership_id, formData) 
         card.cardholder = checkoutFormData.cardholderName;
 
         // Facturación
-        const billing = new window.Models.Billing();
+        const billing = new window.exports.Models.Billing();
         billing.address = checkoutFormData.address;
         billing.country = checkoutFormData.country;
         billing.state = checkoutFormData.state;
@@ -150,7 +150,7 @@ async function procesarPago(username, password, email, membership_id, formData) 
         billing.phone = checkoutFormData.phone;
 
         // Orden
-        const order = new window.Models.Order();
+        const order = new window.exports.Models.Order();
         order.id = orderData.data.order_id;
         order.currency = "HNL";
         order.customer_name = checkoutFormData.customerName;
@@ -158,7 +158,7 @@ async function procesarPago(username, password, email, membership_id, formData) 
         order.amount = orderData.data.monto;
 
         // Crear transacción
-        const authRequest = new window.Requests.SaleTransaction();
+        const authRequest = new window.exports.Requests.SaleTransaction();
         authRequest.setOrder(order);
         authRequest.setCard(card);
         authRequest.setBilling(billing);
@@ -166,10 +166,10 @@ async function procesarPago(username, password, email, membership_id, formData) 
         authRequest.withAuthenticationRequest();
 
         // Ejecutar la transacción
-        const service = new window.Services.Transaction(settings);
+        const service = new window.exports.Services.Transaction(settings);
         const authResponse = await service.doSale(authRequest);
 
-        if (!window.Entities.TransactionResult.validateResponse(authResponse)) {
+        if (!window.exports.Entities.TransactionResult.validateResponse(authResponse)) {
             console.error("Error en la autenticación 3D Secure:", authResponse.message);
             await borrarOrdenWordpress(orderData.data.order_id);
             let mensaje = authResponse.message || "Error desconocido en la autenticación";
@@ -202,7 +202,7 @@ async function procesarPago(username, password, email, membership_id, formData) 
             return false;
         }
 
-        const authResult = window.Entities.TransactionResult.fromResponse(authResponse);
+        const authResult = window.exports.Entities.TransactionResult.fromResponse(authResponse);
         if (authResult.response_approved) {
             try {
                 await obtenerNuevoNonce();
